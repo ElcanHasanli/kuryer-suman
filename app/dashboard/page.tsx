@@ -1,156 +1,195 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import OrderDetailModal from '@/components/courier/OrderDetailModal';
+import {
+  downloadBlob,
+  exportCourierHistory,
+  getNotifications,
+  getCompletedOrders,
+  getOrders,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '@/lib/api';
+import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
+import type { HistoryPeriod, Notification, Order } from '@/lib/types';
+
+type TabId = 'orders' | 'completed' | 'history' | 'notifications';
+
+function customerName(order: Order) {
+  return order.name || order.customer_name || '—';
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    pending: 'Gözləyir',
+    assigned: 'Təyin edilib',
+    in_progress: 'Yoldadır',
+    completed: 'Tamamlanıb',
+  };
+  return map[status] || status;
+}
+
+function paymentLabel(type?: string | null) {
+  const map: Record<string, string> = {
+    cash: 'Nağd',
+    card: 'Kart',
+    credit: 'Nisyə',
+  };
+  return type ? map[type] || type : '—';
+}
+
+function isToday(dateStr?: string) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
 
 export default function CourierDashboard() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, isAuthenticated } = useAuth();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('orders');
-  const [orders, setOrders] = useState([]);
-  const [completedOrders, setCompletedOrders] = useState([]);
+  const [activeTab, setActiveTab] = useState<TabId>('orders');
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [stats, setStats] = useState({
-    pendingOrders: 0,
-    completedToday: 0,
-    totalDelivered: 0,
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('week');
+  const [exporting, setExporting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [ordersData, completedData, notifData] = await Promise.all([
+        getOrders(),
+        getCompletedOrders().catch(() => [] as Order[]),
+        getNotifications().catch(() => [] as Notification[]),
+      ]);
+      const active = ordersData.filter((o) => o.status !== 'completed');
+      const completed =
+        completedData.length > 0
+          ? completedData
+          : ordersData.filter((o) => o.status === 'completed');
+      setActiveOrders(active);
+      setCompletedOrders(completed);
+      setNotifications(notifData);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+    if (user && user.role !== 'courier') {
+      logout();
+      router.replace('/login');
+    }
+  }, [isAuthenticated, user, router, logout]);
+
+  useEffect(() => {
+    if (token && user?.role === 'courier') {
+      refresh();
+    }
+  }, [token, user?.role, refresh]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
+
+  const historyOrders = completedOrders.filter((o) => {
+    if (!o.completed_at) return false;
+    const d = new Date(o.completed_at);
+    const now = new Date();
+    if (historyPeriod === 'today') return isToday(o.completed_at);
+    if (historyPeriod === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (historyPeriod === 'month') {
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      return d >= monthAgo;
+    }
+    return true;
   });
 
-  useEffect(() => {
-    if (!token) {
-      router.push('/login');
-    }
-  }, [token, router]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Get all orders
-        const ordersRes = await fetch('http://localhost:5001/api/orders', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        const ordersData = await ordersRes.json();
-
-        // Filter orders for this courier
-        const courierOrders = ordersData.filter((o: any) => o.courier_id === user?.id);
-        const pending = courierOrders.filter((o: any) => o.status !== 'completed');
-        const completed = courierOrders.filter((o: any) => o.status === 'completed');
-
-        setOrders(pending);
-        setCompletedOrders(completed);
-
-        setStats({
-          pendingOrders: pending.length,
-          completedToday: completed.length,
-          totalDelivered: completed.length,
-        });
-      } catch (err) {
-        console.error('Error fetching data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (token && user?.id) {
-      fetchData();
-    }
-  }, [token, user?.id]);
-
-  if (!user) return null;
+  const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
 
-  const handleUpdateOrder = async (orderId: number, status: string) => {
+  const handleMarkRead = async (id: number) => {
+    await markNotificationRead(id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    await markAllNotificationsRead();
+    refresh();
+  };
+
+  const handleExport = async () => {
+    if (!user?.id) return;
+    setExporting(true);
     try {
-      const res = await fetch(`http://localhost:5001/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status }),
-      });
-
-      if (res.ok) {
-        // Refresh orders
-        const ordersRes = await fetch('http://localhost:5001/api/orders', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        const ordersData = await ordersRes.json();
-        const courierOrders = ordersData.filter((o: any) => o.courier_id === user?.id);
-        const pending = courierOrders.filter((o: any) => o.status !== 'completed');
-        const completed = courierOrders.filter((o: any) => o.status === 'completed');
-
-        setOrders(pending);
-        setCompletedOrders(completed);
-        setSelectedOrder(null);
-      }
+      const blob = await exportCourierHistory(user.id, historyPeriod);
+      downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
     } catch (err) {
-      console.error('Error updating order:', err);
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Export uğursuz oldu');
+    } finally {
+      setExporting(false);
     }
   };
 
+  if (!user) return null;
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      {/* Sidebar */}
-      <aside
-        style={{
-          width: '280px',
-          backgroundColor: '#ffffff',
-          borderRight: '1px solid #e5e7eb',
-          padding: '24px 20px',
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-          position: 'fixed',
-          height: '100vh',
-          overflowY: 'auto',
-        }}
-      >
-        {/* Logo */}
+      <aside style={sidebarStyle}>
         <div style={{ marginBottom: '32px', textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>💧</div>
-          <h1 style={{ fontSize: '20px', fontWeight: '700', margin: '0 0 4px 0', color: '#1f2937' }}>
-            SuMan
-          </h1>
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>
-            Kuryer Panel
-          </p>
+          <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 4px', color: '#1f2937' }}>SuMan</h1>
+          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Kuryer Panel</p>
         </div>
 
-        {/* User Info */}
-        <div
-          style={{
-            padding: '12px 16px',
-            backgroundColor: '#f9fafb',
-            borderRadius: '8px',
-            marginBottom: '24px',
-            borderLeft: '3px solid #10b981',
-          }}
-        >
-          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 4px 0', textTransform: 'uppercase' }}>
+        <div style={userBoxStyle}>
+          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 4px', textTransform: 'uppercase' }}>
             Daxil olmuş:
           </p>
-          <p style={{ fontSize: '13px', fontWeight: '600', color: '#1f2937', margin: '0 0 2px 0' }}>
-            {user.name}
-          </p>
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0, wordBreak: 'break-all' }}>
-            {user.email}
-          </p>
+          <p style={{ fontSize: '13px', fontWeight: 600, color: '#1f2937', margin: '0 0 2px' }}>{user.name}</p>
+          {user.company_name && (
+            <p style={{ fontSize: '12px', color: '#059669', margin: '0 0 4px', fontWeight: 500 }}>
+              {user.company_name}
+            </p>
+          )}
+          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0, wordBreak: 'break-all' }}>{user.email}</p>
         </div>
 
-        {/* Navigation */}
         <nav style={{ marginBottom: '32px' }}>
-          {[
-            { id: 'orders', label: '📦 Sifarişlər' },
-            { id: 'completed', label: '✅ Tamamlanan' },
-            { id: 'history', label: '📈 Tarixçə' },
-          ].map((item) => (
+          {(
+            [
+              { id: 'orders' as const, label: '📦 Aktiv sifarişlər' },
+              { id: 'completed' as const, label: '✅ Tamamlanan' },
+              { id: 'history' as const, label: '📈 Tarixçə' },
+              { id: 'notifications' as const, label: '🔔 Bildirişlər', badge: unreadCount },
+            ] as const
+          ).map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
@@ -165,376 +204,327 @@ export default function CourierDashboard() {
                 textAlign: 'left',
                 cursor: 'pointer',
                 fontSize: '13px',
-                fontWeight: activeTab === item.id ? '600' : '500',
+                fontWeight: activeTab === item.id ? 600 : 500,
                 color: activeTab === item.id ? '#1f2937' : '#6b7280',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (activeTab !== item.id) {
-                  e.currentTarget.style.backgroundColor = '#f9fafb';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (activeTab !== item.id) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                }
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {'badge' in item && item.badge > 0 && (
+                <span
+                  style={{
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                  }}
+                >
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
 
-        {/* Logout Button */}
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%',
-            padding: '11px 14px',
-            backgroundColor: '#fee2e2',
-            color: '#dc2626',
-            border: '1px solid #fecaca',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: '600',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#fecaca';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#fee2e2';
-          }}
-        >
+        <button onClick={handleLogout} style={logoutBtnStyle}>
           🚪 Çıxış
         </button>
       </aside>
 
-      {/* Main Content */}
-      <main
-        style={{
-          marginLeft: '280px',
-          flex: 1,
-          padding: '32px',
-          overflowY: 'auto',
-        }}
-      >
-        {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: '700', margin: 0, color: '#1f2937' }}>
-            {activeTab === 'orders' && 'Gözləyən Sifarişlər'}
+      <main style={mainStyle}>
+        <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0, color: '#1f2937' }}>
+            {activeTab === 'orders' && 'Aktiv Sifarişlər'}
             {activeTab === 'completed' && 'Tamamlanan Sifarişlər'}
             {activeTab === 'history' && 'Tarixçə'}
+            {activeTab === 'notifications' && 'Bildirişlər'}
           </h1>
-        </div>
+          <button
+            onClick={() => refresh()}
+            style={{
+              padding: '8px 14px',
+              fontSize: '13px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            ↻ Yenilə
+          </button>
+        </header>
 
-        {/* Stats */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '20px',
-            marginBottom: '32px',
-          }}
-        >
-          <StatCard title="Gözləyən" value={stats.pendingOrders} icon="⏳" color="#f59e0b" />
-          <StatCard title="Bugün Tamamlanan" value={stats.completedToday} icon="✅" color="#10b981" />
-          <StatCard title="Toplam Çatdırılmış" value={stats.totalDelivered} icon="🚚" color="#3b82f6" />
-        </div>
+        {activeTab !== 'notifications' && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '20px',
+              marginBottom: '32px',
+            }}
+          >
+            <StatCard title="Aktiv" value={activeOrders.length} icon="📦" color="#f59e0b" />
+            <StatCard title="Bugün tamamlanan" value={completedToday} icon="✅" color="#10b981" />
+            <StatCard title="Ümumi tamamlanan" value={completedOrders.length} icon="🚚" color="#3b82f6" />
+            {activeTab === 'history' && (
+              <StatCard
+                title="Seçilmiş dövr gəliri"
+                value={`₼${historyRevenue.toFixed(2)}`}
+                icon="💰"
+                color="#8b5cf6"
+              />
+            )}
+          </div>
+        )}
 
-        {/* Orders Tab */}
         {activeTab === 'orders' && (
-          <div>
-            <div
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-              }}
-            >
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse' as const,
-                  fontSize: '13px',
-                }}
-              >
-                <thead>
-                  <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Müştəri
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Ünvan
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Bidon
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Qiymət
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Əməliyyat
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                        Yüklənir...
-                      </td>
-                    </tr>
-                  ) : orders.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                        Gözləyən sifariş yoxdur
-                      </td>
-                    </tr>
-                  ) : (
-                    orders.map((order: any) => (
-                      <tr
-                        key={order.id}
-                        style={{ borderBottom: '1px solid #e5e7eb' }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f9fafb';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
-                      >
-                        <td style={{ padding: '12px 16px', color: '#1f2937', fontWeight: '500' }}>
-                          {order.name}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: '12px' }}>
-                          {order.address}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1f2937' }}>
-                          {order.bidons_count}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1f2937', fontWeight: '600' }}>
-                          ₼{order.price ? order.price.toFixed(2) : '0.00'}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <button
-                            onClick={() => setSelectedOrder(order)}
-                            style={{
-                              padding: '6px 12px',
-                              backgroundColor: '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                            }}
-                          >
-                            Təfərrüat
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <OrdersTable
+            orders={activeOrders}
+            loading={loading}
+            emptyText="Aktiv sifariş yoxdur"
+            showStatus
+            onOpen={(id) => setSelectedOrderId(id)}
+          />
         )}
 
-        {/* Completed Tab */}
         {activeTab === 'completed' && (
-          <div>
-            <div
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-              }}
-            >
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse' as const,
-                  fontSize: '13px',
-                }}
-              >
-                <thead>
-                  <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Müştəri
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Ödəniş
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Boş Bidon
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Dolu Bidon
-                    </th>
-                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}>
-                      Tarix
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {completedOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                        Tamamlanan sifariş yoxdur
-                      </td>
-                    </tr>
-                  ) : (
-                    completedOrders.map((order: any) => (
-                      <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <td style={{ padding: '12px 16px', color: '#1f2937', fontWeight: '500' }}>
-                          {order.name}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1f2937' }}>
-                          {order.payment_type || '-'}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1f2937' }}>
-                          {order.empty_bidons_returned}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#1f2937' }}>
-                          {order.full_bidons_given}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: '12px' }}>
-                          {order.completed_at ? new Date(order.completed_at).toLocaleDateString('az-AZ') : '-'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <OrdersTable
+            orders={completedOrders}
+            loading={loading}
+            emptyText="Tamamlanan sifariş yoxdur"
+            completed
+          />
         )}
 
-        {/* History Tab */}
         {activeTab === 'history' && (
-          <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '24px',
-              textAlign: 'center',
-              color: '#6b7280',
-              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-            }}
-          >
-            📊 Tarixçə funksiyası hazırlanır...
+          <div>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+              {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setHistoryPeriod(p)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: historyPeriod === p ? '2px solid #10b981' : '1px solid #e5e7eb',
+                    background: historyPeriod === p ? '#ecfdf5' : 'white',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: historyPeriod === p ? 600 : 400,
+                  }}
+                >
+                  {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
+                </button>
+              ))}
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '8px 16px',
+                  backgroundColor: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: exporting ? 'wait' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {exporting ? 'Export...' : '📥 Excel'}
+              </button>
+            </div>
+            <OrdersTable orders={historyOrders} loading={loading} emptyText="Bu dövrdə sifariş yoxdur" completed />
           </div>
         )}
 
-        {/* Order Details Modal */}
-        {selectedOrder && (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-            }}
-            onClick={() => setSelectedOrder(null)}
-          >
-            <div
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                padding: '24px',
-                maxWidth: '500px',
-                width: '90%',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px', color: '#1f2937' }}>
-                Sifariş Detallı
-              </h2>
-
-              <div style={{ marginBottom: '16px' }}>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Müştəri</p>
-                <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: '#1f2937' }}>
-                  {selectedOrder.name}
-                </p>
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Ünvan</p>
-                <p style={{ fontSize: '14px', margin: 0, color: '#1f2937' }}>
-                  {selectedOrder.address}
-                </p>
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Bidon Sayı</p>
-                <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: '#1f2937' }}>
-                  {selectedOrder.bidons_count}
-                </p>
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Qiymət</p>
-                <p style={{ fontSize: '14px', fontWeight: '600', margin: 0, color: '#1f2937' }}>
-                  ₼{selectedOrder.price ? selectedOrder.price.toFixed(2) : '0.00'}
-                </p>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '12px',
-                  marginTop: '24px',
-                }}
-              >
+        {activeTab === 'notifications' && (
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            {unreadCount > 0 && (
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
                 <button
-                  onClick={() => setSelectedOrder(null)}
+                  onClick={handleMarkAllRead}
                   style={{
-                    padding: '10px 16px',
-                    backgroundColor: '#e5e7eb',
-                    color: '#1f2937',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
                     fontSize: '13px',
+                    color: '#10b981',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600,
                   }}
                 >
-                  Bağla
-                </button>
-                <button
-                  onClick={() => handleUpdateOrder(selectedOrder.id, 'completed')}
-                  style={{
-                    padding: '10px 16px',
-                    backgroundColor: '#10b981',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                    fontSize: '13px',
-                  }}
-                >
-                  ✅ Tamamla
+                  Hamısını oxunmuş et
                 </button>
               </div>
-            </div>
+            )}
+            {notifications.length === 0 ? (
+              <p style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>Bildiriş yoxdur</p>
+            ) : (
+              notifications.map((n) => (
+                <div
+                  key={n.id}
+                  style={{
+                    padding: '16px',
+                    borderBottom: '1px solid #f3f4f6',
+                    backgroundColor: n.read ? 'white' : '#f0fdf4',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>{n.message}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9ca3af' }}>
+                      {new Date(n.created_at).toLocaleString('az-AZ')}
+                    </p>
+                  </div>
+                  {!n.read && (
+                    <button
+                      onClick={() => handleMarkRead(n.id)}
+                      style={{
+                        flexShrink: 0,
+                        padding: '6px 10px',
+                        fontSize: '11px',
+                        border: '1px solid #10b981',
+                        color: '#10b981',
+                        background: 'white',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Oxundu
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
+        )}
+
+        {selectedOrderId !== null && (
+          <OrderDetailModal
+            orderId={selectedOrderId}
+            onClose={() => setSelectedOrderId(null)}
+            onUpdated={refresh}
+          />
         )}
       </main>
     </div>
   );
 }
 
-// Stat Card Component
-function StatCard({ title, value, icon, color }: { title: string; value: string | number; icon: string; color: string }) {
+function OrdersTable({
+  orders,
+  loading,
+  emptyText,
+  showStatus,
+  completed,
+  onOpen,
+}: {
+  orders: Order[];
+  loading: boolean;
+  emptyText: string;
+  showStatus?: boolean;
+  completed?: boolean;
+  onOpen?: (id: number) => void;
+}) {
+  return (
+    <div style={{ backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+            <th style={thStyle}>Müştəri</th>
+            <th style={thStyle}>Ünvan</th>
+            {!completed && <th style={thStyle}>Bidon</th>}
+            {!completed && <th style={thStyle}>Cəmi (₼)</th>}
+            {showStatus && <th style={thStyle}>Status</th>}
+            {completed && <th style={thStyle}>Ödəniş</th>}
+            {completed && <th style={thStyle}>Boş / Dolu</th>}
+            {completed && <th style={thStyle}>Tarix</th>}
+            {onOpen && <th style={thStyle}>Əməliyyat</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr>
+              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
+                Yüklənir...
+              </td>
+            </tr>
+          ) : orders.length === 0 ? (
+            <tr>
+              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
+                {emptyText}
+              </td>
+            </tr>
+          ) : (
+            orders.map((order) => (
+              <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                <td style={tdStyle}>{customerName(order)}</td>
+                <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>{order.address}</td>
+                {!completed && <td style={tdStyle}>{order.bidons_count}</td>}
+                {!completed && (
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>
+                    ₼{orderTotal(order).toFixed(2)}
+                  </td>
+                )}
+                {showStatus && <td style={tdStyle}>{statusLabel(order.status)}</td>}
+                {completed && <td style={tdStyle}>{paymentLabel(order.payment_type)}</td>}
+                {completed && (
+                  <td style={tdStyle}>
+                    {order.empty_bidons_returned ?? 0} / {order.full_bidons_given ?? order.bidons_count}
+                  </td>
+                )}
+                {completed && (
+                  <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>
+                    {order.completed_at
+                      ? new Date(order.completed_at).toLocaleDateString('az-AZ')
+                      : '—'}
+                  </td>
+                )}
+                {onOpen && (
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => onOpen(order.id)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Aç
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  icon,
+  color,
+}: {
+  title: string;
+  value: string | number;
+  icon: string;
+  color: string;
+}) {
   return (
     <div
       style={{
@@ -548,15 +538,60 @@ function StatCard({ title, value, icon, color }: { title: string; value: string 
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px 0', fontWeight: '500' }}>
-            {title}
-          </p>
-          <p style={{ fontSize: '28px', fontWeight: '700', color: '#1f2937', margin: 0 }}>
-            {value}
-          </p>
+          <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px', fontWeight: 500 }}>{title}</p>
+          <p style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937', margin: 0 }}>{value}</p>
         </div>
         <div style={{ fontSize: '28px' }}>{icon}</div>
       </div>
     </div>
   );
 }
+
+const sidebarStyle: React.CSSProperties = {
+  width: '280px',
+  backgroundColor: '#ffffff',
+  borderRight: '1px solid #e5e7eb',
+  padding: '24px 20px',
+  position: 'fixed',
+  height: '100vh',
+  overflowY: 'auto',
+};
+
+const mainStyle: React.CSSProperties = {
+  marginLeft: '280px',
+  flex: 1,
+  padding: '32px',
+  overflowY: 'auto',
+};
+
+const userBoxStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  backgroundColor: '#f9fafb',
+  borderRadius: '8px',
+  marginBottom: '24px',
+  borderLeft: '3px solid #10b981',
+};
+
+const logoutBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '11px 14px',
+  backgroundColor: '#fee2e2',
+  color: '#dc2626',
+  border: '1px solid #fecaca',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '13px',
+  fontWeight: 600,
+};
+
+const thStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  textAlign: 'left',
+  fontWeight: 600,
+  color: '#6b7280',
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  color: '#1f2937',
+};

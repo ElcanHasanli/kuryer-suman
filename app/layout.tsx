@@ -3,8 +3,8 @@ import { AuthProvider } from '@/context/AuthContext';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Damacana Admin',
-  description: 'Admin panel for water delivery',
+  title: 'SuMan — Kuryer Paneli',
+  description: 'Su çatdırılması kuryer paneli',
 };
 
 export default function RootLayout({
@@ -13,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="az" suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

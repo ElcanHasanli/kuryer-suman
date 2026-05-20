@@ -1,20 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { login } from '@/lib/api';
+import { ApiError, login } from '@/lib/api';
+import { getLicenseCode, setLicenseCode } from '@/lib/storage';
 import { useAuth } from '@/context/AuthContext';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [licenseCode, setLicenseCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const router = useRouter();
-  const { login: authLogin } = useAuth();
+  const { login: authLogin, isAuthenticated, user } = useAuth();
+
+  useEffect(() => {
+    setLicenseCode(getLicenseCode());
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && user?.role === 'courier') {
+      router.replace('/dashboard');
+    }
+  }, [isAuthenticated, user, router]);
 
   const getContainerStyle = () => ({
     position: 'fixed' as const,
@@ -37,14 +49,31 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      const data = await login(email, password);
+      if (!licenseCode.trim()) {
+        setError('Lisenziya kodu tələb olunur');
+        setLoading(false);
+        return;
+      }
+      const data = await login(email, password, licenseCode);
+      if (data.user.role !== 'courier') {
+        setError('Bu panel yalnız kuryerlər üçündür. Admin panelindən daxil olun.');
+        setLoading(false);
+        return;
+      }
+      setLicenseCode(licenseCode.trim());
       authLogin(data.user, data.token);
       setSuccess(true);
       setTimeout(() => {
         router.push('/dashboard');
       }, 500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Giriş uğursuz oldu'
+      );
       setLoading(false);
     }
   };
@@ -198,11 +227,49 @@ const LoginPage = () => {
             </h2>
 
             <form onSubmit={handleSubmit}>
-              {/* Email Input */}
+              <div style={{ position: 'relative', marginBottom: '20px' }}>
+                <input
+                  type="text"
+                  placeholder="Lisenziya kodu (SUMAN-XXXX-XXXX)"
+                  value={licenseCode}
+                  onChange={(e) => setLicenseCode(e.target.value.toUpperCase())}
+                  autoComplete="off"
+                  style={{
+                    width: '100%',
+                    padding: '12px 12px 12px 40px',
+                    borderRadius: '8px',
+                    border: isDarkMode
+                      ? '1.5px solid rgba(75, 85, 99, 0.5)'
+                      : '1.5px solid rgba(255, 255, 255, 0.2)',
+                    background: isDarkMode
+                      ? 'rgba(55, 65, 81, 0.4)'
+                      : 'rgba(255, 255, 255, 0.15)',
+                    color: 'white',
+                    fontSize: '1rem',
+                    outline: 'none',
+                    transition: 'all 0.3s ease',
+                    boxSizing: 'border-box',
+                    letterSpacing: '0.04em',
+                  }}
+                  required
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: '14px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                  }}
+                >
+                  🏢
+                </span>
+              </div>
+
               <div style={{ position: 'relative', marginBottom: '20px' }}>
                 <input
                   type="email"
-                  placeholder="courier@suman.com"
+                  placeholder="kuryer@suman.az"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   style={{

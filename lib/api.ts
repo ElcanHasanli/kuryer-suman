@@ -1,67 +1,148 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+import { STORAGE_KEYS } from './storage';
+import type {
+  CompleteOrderPayload,
+  HistoryPeriod,
+  Notification,
+  Order,
+  User,
+} from './types';
 
-export async function login(email: string, password: string) {
-  const res = await fetch(`${API_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-  if (!res.ok) throw new Error('Login failed');
-  return res.json();
+export class ApiError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
 }
 
-export async function getUsers(token: string) {
-  const res = await fetch(`${API_URL}/users`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
+async function api<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+  auth = true
+): Promise<T> {
+  const token =
+    auth && typeof window !== 'undefined'
+      ? localStorage.getItem(STORAGE_KEYS.token)
+      : null;
 
-  if (!res.ok) throw new Error('Failed to fetch users');
-  return res.json();
-}
-
-export async function getOrders(token: string) {
-  const res = await fetch(`${API_URL}/orders`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-
-  if (!res.ok) throw new Error('Failed to fetch orders');
-  return res.json();
-}
-
-export async function createOrder(token: string, data: any) {
-  const res = await fetch(`${API_URL}/orders`, {
-    method: 'POST',
+  const res = await fetch(`${API}${path}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
     },
-    body: JSON.stringify(data),
   });
 
-  if (!res.ok) throw new Error('Failed to create order');
-  return res.json();
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (err as { error?: string }).error || res.statusText,
+      res.status
+    );
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (
+    contentType.includes('spreadsheet') ||
+    contentType.includes('octet-stream') ||
+    contentType.includes('excel') ||
+    contentType.includes('vnd.openxmlformats')
+  ) {
+    return res.blob() as Promise<T>;
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
-export async function updateOrder(token: string, id: number, data: any) {
-  const res = await fetch(`${API_URL}/orders/${id}`, {
+export async function login(
+  email: string,
+  password: string,
+  license_code: string
+) {
+  return api<{ message: string; token: string; user: User }>(
+    '/api/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+        license_code: license_code.trim(),
+      }),
+    },
+    false
+  );
+}
+
+export async function getOrders(params?: { status?: Order['status'] }) {
+  const query = params?.status
+    ? `?${new URLSearchParams({ status: params.status }).toString()}`
+    : '';
+  return api<Order[]>(`/api/orders${query}`);
+}
+
+export async function getCompletedOrders() {
+  return getOrders({ status: 'completed' });
+}
+
+export async function getOrder(id: number) {
+  return api<Order>(`/api/orders/${id}`);
+}
+
+export async function startOrder(id: number) {
+  return api<Order>(`/api/orders/${id}/start`, { method: 'PUT' });
+}
+
+export async function completeOrder(id: number, data: CompleteOrderPayload) {
+  return api<Order>(`/api/orders/${id}/complete`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
     body: JSON.stringify(data),
   });
-
-  if (!res.ok) throw new Error('Failed to update order');
-  return res.json();
 }
 
-export async function getCouriers(token: string) {
-  const res = await fetch(`${API_URL}/couriers`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
+export async function getNotifications() {
+  return api<Notification[]>('/api/notifications');
+}
 
-  if (!res.ok) throw new Error('Failed to fetch couriers');
-  return res.json();
+export async function markNotificationRead(id: number) {
+  return api(`/api/notifications/${id}/read`, { method: 'PATCH' });
+}
+
+export async function markAllNotificationsRead() {
+  return api('/api/notifications/read-all', { method: 'PATCH' });
+}
+
+export async function exportCourierHistory(
+  courierId: number,
+  period: HistoryPeriod,
+  startDate?: string,
+  endDate?: string
+) {
+  const params = new URLSearchParams({ period });
+  if (period === 'custom' && startDate && endDate) {
+    params.set('startDate', startDate);
+    params.set('endDate', endDate);
+  }
+  return api<Blob>(
+    `/api/orders/courier/${courierId}/export?${params.toString()}`
+  );
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
