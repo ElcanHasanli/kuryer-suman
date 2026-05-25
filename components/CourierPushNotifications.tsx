@@ -92,30 +92,33 @@ export default function CourierPushNotifications() {
       }
 
       if (Capacitor.isNativePlatform()) {
+        await PushNotifications.addListener('registration', async (ev) => {
+          if (!ev.value) return;
+          try {
+            await registerPushDeviceToken(ev.value, Capacitor.getPlatform());
+          } catch {
+            // server token endpoint yoxdursa polling işləyir
+          }
+        });
+
+        await PushNotifications.addListener('registrationError', () => {
+          // FCM: google-services.json və Firebase Android app lazımdır
+        });
+
+        await PushNotifications.addListener('pushNotificationReceived', (n) => {
+          const title = n.title || '📦 Yeni sifariş təyin edildi';
+          const body = n.body || '';
+          const orderId = n.data?.orderId ? Number(n.data.orderId) : undefined;
+          void showBanner(title, body, orderId);
+        });
+
+        await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+          router.push('/dashboard');
+        });
+
         const pushPerm = await PushNotifications.requestPermissions();
         if (pushPerm.receive === 'granted') {
           await PushNotifications.register();
-
-          await PushNotifications.addListener('registration', async (ev) => {
-            if (ev.value) {
-              try {
-                await registerPushDeviceToken(ev.value, Capacitor.getPlatform());
-              } catch {
-                // server token endpoint yoxdursa polling işləyir
-              }
-            }
-          });
-
-          await PushNotifications.addListener('pushNotificationReceived', (n) => {
-            const title = n.title || '📦 Yeni sifariş təyin edildi';
-            const body = n.body || '';
-            const orderId = n.data?.orderId ? Number(n.data.orderId) : undefined;
-            void showBanner(title, body, orderId);
-          });
-
-          await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-            router.push('/dashboard');
-          });
         }
       }
 
