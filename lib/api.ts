@@ -10,7 +10,11 @@ import type {
   User,
 } from './types';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production'
+    ? 'https://api.suman.khamsacraft.az'
+    : 'http://localhost:5001');
 
 export class ApiError extends Error {
   status?: number;
