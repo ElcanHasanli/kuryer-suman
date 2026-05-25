@@ -75,17 +75,11 @@ npm run mobile:sync
 
 Panel dəyişəndə yenidən `mobile:sync` və APK rebuild edin.
 
-### B) Uzaq URL (APK yeniləmədən panel yenilənir)
+### B) Uzaq URL (tövsiyə olunmur)
 
-Panel artıq internetdə host olunursa (məs. Vercel):
+`https://courier.suman.khamsacraft.az` üzərindən yükləsəniz, serverdə **tam `out/` deploy** olmalıdır. Əks halda `_next/static/chunks/... 404` alınar (köhnə HTML + yeni chunk uyğunsuzluğu).
 
-```bash
-CAPACITOR_USE_REMOTE=true \
-CAPACITOR_SERVER_URL=https://SIZIN-PANEL-DOMENI.az \
-npm run mobile:sync
-```
-
-Sonra Android Studio / Xcode ilə eyni qaydada build edin.
+Mobil üçün **default daxili `out/`** daha etibarlıdır — `CAPACITOR_USE_REMOTE` istifadə etməyin.
 
 ## Faydalı əmrlər
 
