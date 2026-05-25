@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
@@ -10,11 +11,20 @@ import type {
   User,
 } from './types';
 
-const API =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === 'production'
-    ? 'https://api.suman.khamsacraft.az'
-    : 'http://localhost:5001');
+/** Production API — mobil tətbiqdə həmişə bu istifadə olunur */
+export const PRODUCTION_API_URL = 'https://api.suman.khamsacraft.az';
+
+function resolveApiBase(): string {
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    return PRODUCTION_API_URL;
+  }
+  return (
+    process.env.NEXT_PUBLIC_API_URL ??
+    (process.env.NODE_ENV === 'production' ? PRODUCTION_API_URL : 'http://localhost:5001')
+  );
+}
+
+const API = resolveApiBase();
 
 export class ApiError extends Error {
   status?: number;
@@ -36,14 +46,22 @@ async function api<T = unknown>(
       ? localStorage.getItem(STORAGE_KEYS.token)
       : null;
 
-  const res = await fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(
+      'Şəbəkə xətası — internet və ya server əlçatan deyil',
+      0
+    );
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

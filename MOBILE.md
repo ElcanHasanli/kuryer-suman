@@ -103,7 +103,7 @@ Dəyişəndə: `npm run mobile:sync` və yenidən build.
 
 **Ağ ekran:** `out/` mövcuddur? → `npm run mobile:build` işlədin.
 
-**API xətası:** Cihazda internet və `NEXT_PUBLIC_API_URL` düzgündürmü yoxlayın.
+**API xətası / Load failed:** `npm run mobile:sync` yenidən işlədin. Backend-də CORS-da `https://localhost` və `capacitor://localhost` olmalıdır (server.js yeniləndi). `.env.local` içindəki `localhost` API URL-i mobil build-ə təsir etməməlidir — `mobile:build` production URL məcbur edir.
 
 **Android Gradle:** Android Studio → **File → Sync Project with Gradle Files**.
 
