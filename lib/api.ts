@@ -1,99 +1,177 @@
-import type { ExpensePeriod } from './types';
+import { STORAGE_KEYS } from './storage';
+import type {
+  CompleteOrderPayload,
+  ExpensePeriod,
+  ExpensesResponse,
+  HistoryPeriod,
+  Notification,
+  Order,
+  OrderNote,
+  User,
+} from './types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-function authHeaders(token: string) {
-  return { Authorization: `Bearer ${token}` };
+export class ApiError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
 }
 
-export async function login(license_code: string, password: string) {
-  const res = await fetch(`${API_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ license_code, password }),
-  });
+async function api<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+  auth = true
+): Promise<T> {
+  const token =
+    auth && typeof window !== 'undefined'
+      ? localStorage.getItem(STORAGE_KEYS.token)
+      : null;
 
-  if (!res.ok) throw new Error('Giriş uğursuz oldu');
-  return res.json();
-}
-
-export async function getOrders(token: string) {
-  const res = await fetch(`${API_URL}/orders`, {
-    headers: authHeaders(token),
-  });
-
-  if (!res.ok) throw new Error('Sifarişlər yüklənmədi');
-  return res.json();
-}
-
-export async function getOrder(token: string, id: number) {
-  const res = await fetch(`${API_URL}/orders/${id}`, {
-    headers: authHeaders(token),
-  });
-
-  if (!res.ok) throw new Error('Sifariş yüklənmədi');
-  return res.json();
-}
-
-export async function getOrderNotes(token: string, id: number) {
-  const res = await fetch(`${API_URL}/orders/${id}/notes`, {
-    headers: authHeaders(token),
-  });
-
-  if (!res.ok) throw new Error('Qeydlər yüklənmədi');
-  return res.json();
-}
-
-export async function postOrderNote(token: string, id: number, body: string) {
-  const res = await fetch(`${API_URL}/orders/${id}/notes`, {
-    method: 'POST',
+  const res = await fetch(`${API}${path}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(token),
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
     },
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (err as { error?: string }).error || res.statusText,
+      res.status
+    );
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (
+    contentType.includes('spreadsheet') ||
+    contentType.includes('octet-stream') ||
+    contentType.includes('excel') ||
+    contentType.includes('vnd.openxmlformats')
+  ) {
+    return res.blob() as Promise<T>;
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
+}
+
+export async function login(
+  email: string,
+  password: string,
+  license_code: string
+) {
+  return api<{ message: string; token: string; user: User }>(
+    '/api/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+        license_code: license_code.trim(),
+      }),
+    },
+    false
+  );
+}
+
+export async function getOrders(params?: { status?: Order['status'] }) {
+  const query = params?.status
+    ? `?${new URLSearchParams({ status: params.status }).toString()}`
+    : '';
+  return api<Order[]>(`/api/orders${query}`);
+}
+
+export async function getCompletedOrders() {
+  return getOrders({ status: 'completed' });
+}
+
+export async function getOrder(id: number) {
+  return api<Order>(`/api/orders/${id}`);
+}
+
+export async function startOrder(id: number) {
+  return api<Order>(`/api/orders/${id}/start`, { method: 'PUT' });
+}
+
+export async function completeOrder(id: number, data: CompleteOrderPayload) {
+  return api<Order>(`/api/orders/${id}/complete`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getNotifications() {
+  return api<Notification[]>('/api/notifications');
+}
+
+export async function markNotificationRead(id: number) {
+  return api(`/api/notifications/${id}/read`, { method: 'PATCH' });
+}
+
+export async function markAllNotificationsRead() {
+  return api('/api/notifications/read-all', { method: 'PATCH' });
+}
+
+export async function exportCourierHistory(
+  courierId: number,
+  period: HistoryPeriod,
+  startDate?: string,
+  endDate?: string
+) {
+  const params = new URLSearchParams({ period });
+  if (period === 'custom' && startDate && endDate) {
+    params.set('startDate', startDate);
+    params.set('endDate', endDate);
+  }
+  return api<Blob>(
+    `/api/orders/courier/${courierId}/export?${params.toString()}`
+  );
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function getOrderNotes(orderId: number) {
+  return api<OrderNote[]>(`/api/orders/${orderId}/notes`);
+}
+
+export async function postOrderNote(orderId: number, body: string) {
+  return api<OrderNote>(`/api/orders/${orderId}/notes`, {
+    method: 'POST',
     body: JSON.stringify({ body }),
   });
-
-  if (!res.ok) throw new Error('Qeyd əlavə edilmədi');
-  return res.json();
 }
 
-export async function updateOrder(token: string, id: number, data: Record<string, unknown>) {
-  const res = await fetch(`${API_URL}/orders/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(token),
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!res.ok) throw new Error('Sifariş yenilənmədi');
-  return res.json();
+export async function getExpenses(period: ExpensePeriod) {
+  return api<ExpensesResponse>(`/api/expenses?period=${period}`);
 }
 
-export async function getExpenses(token: string, period: ExpensePeriod) {
-  const res = await fetch(`${API_URL}/expenses?period=${period}`, {
-    headers: authHeaders(token),
-  });
-
-  if (!res.ok) throw new Error('Xərclər yüklənmədi');
-  return res.json();
-}
-
-export async function createExpense(
-  token: string,
-  data: { amount: number; description: string; category: string }
-) {
-  const res = await fetch(`${API_URL}/expenses`, {
+export async function createExpense(data: {
+  amount: number;
+  description: string;
+  category: string;
+}) {
+  return api<ExpensesResponse>('/api/expenses', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(token),
-    },
     body: JSON.stringify(data),
   });
-
-  if (!res.ok) throw new Error('Xərc əlavə edilmədi');
-  return res.json();
 }

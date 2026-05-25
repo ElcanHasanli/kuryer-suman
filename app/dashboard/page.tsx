@@ -1,254 +1,195 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import OrderDetailModal from '@/components/courier/OrderDetailModal';
+import ExpensesSection from '@/components/courier/ExpensesSection';
 import {
+  downloadBlob,
+  exportCourierHistory,
+  getNotifications,
+  getCompletedOrders,
   getOrders,
-  getOrder,
-  updateOrder,
-  postOrderNote,
-  getExpenses,
-  createExpense,
+  markAllNotificationsRead,
+  markNotificationRead,
 } from '@/lib/api';
-import type { Order, OrderNote, Expense, ExpensePeriod } from '@/lib/types';
-import {
-  EXPENSE_CATEGORIES,
-  expenseCategoryLabel,
-  authorRoleLabel,
-} from '@/lib/types';
+import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
+import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
-type TabId = 'orders' | 'completed' | 'expenses' | 'history';
+type TabId = 'orders' | 'completed' | 'expenses' | 'history' | 'notifications';
+
+function customerName(order: Order) {
+  return order.name || order.customer_name || '—';
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    pending: 'Gözləyir',
+    assigned: 'Təyin edilib',
+    in_progress: 'Yoldadır',
+    completed: 'Tamamlanıb',
+  };
+  return map[status] || status;
+}
+
+function paymentLabel(type?: string | null) {
+  const map: Record<string, string> = {
+    cash: 'Nağd',
+    card: 'Kart',
+    credit: 'Nisyə',
+  };
+  return type ? map[type] || type : '—';
+}
+
+function isToday(dateStr?: string) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
 
 export default function CourierDashboard() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, isAuthenticated } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('orders');
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [orderNotes, setOrderNotes] = useState<OrderNote[]>([]);
-  const [noteBody, setNoteBody] = useState('');
-  const [noteSubmitting, setNoteSubmitting] = useState(false);
-  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('week');
+  const [exporting, setExporting] = useState(false);
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [totalExpenses, setTotalExpenses] = useState(0);
-  const [expensesLoading, setExpensesLoading] = useState(false);
-  const [historyPeriod, setHistoryPeriod] = useState<ExpensePeriod>('today');
-  const [expenseForm, setExpenseForm] = useState({
-    amount: '',
-    description: '',
-    category: 'fuel',
+  const refresh = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [ordersData, completedData, notifData] = await Promise.all([
+        getOrders(),
+        getCompletedOrders().catch(() => [] as Order[]),
+        getNotifications().catch(() => [] as Notification[]),
+      ]);
+      const active = ordersData.filter((o) => o.status !== 'completed');
+      const completed =
+        completedData.length > 0
+          ? completedData
+          : ordersData.filter((o) => o.status === 'completed');
+      setActiveOrders(active);
+      setCompletedOrders(completed);
+      setNotifications(notifData);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+    if (user && user.role !== 'courier') {
+      logout();
+      router.replace('/login');
+    }
+  }, [isAuthenticated, user, router, logout]);
+
+  useEffect(() => {
+    if (token && user?.role === 'courier') {
+      refresh();
+    }
+  }, [token, user?.role, refresh]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
+
+  const historyOrders = completedOrders.filter((o) => {
+    if (!o.completed_at) return false;
+    const d = new Date(o.completed_at);
+    const now = new Date();
+    if (historyPeriod === 'today') return isToday(o.completed_at);
+    if (historyPeriod === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (historyPeriod === 'month') {
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      return d >= monthAgo;
+    }
+    return true;
   });
-  const [expenseSubmitting, setExpenseSubmitting] = useState(false);
-  const [expenseError, setExpenseError] = useState('');
 
-  const [stats, setStats] = useState({
-    pendingOrders: 0,
-    completedToday: 0,
-    totalDelivered: 0,
-  });
-
-  useEffect(() => {
-    if (!token) router.push('/login');
-  }, [token, router]);
-
-  const refreshOrders = useCallback(async () => {
-    if (!token || !user?.id) return;
-    const ordersData: Order[] = await getOrders(token);
-    const courierOrders = ordersData.filter((o) => o.courier_id === user.id);
-    const pending = courierOrders.filter((o) => o.status !== 'completed');
-    const completed = courierOrders.filter((o) => o.status === 'completed');
-    const today = new Date().toDateString();
-    const completedToday = completed.filter(
-      (o) => o.completed_at && new Date(o.completed_at).toDateString() === today
-    ).length;
-
-    setOrders(pending);
-    setCompletedOrders(completed);
-    setStats({
-      pendingOrders: pending.length,
-      completedToday,
-      totalDelivered: completed.length,
-    });
-  }, [token, user?.id]);
-
-  const loadExpenses = useCallback(
-    async (period: ExpensePeriod) => {
-      if (!token) return;
-      setExpensesLoading(true);
-      try {
-        const data = await getExpenses(token, period);
-        setExpenses(data.expenses ?? []);
-        setTotalExpenses(data.totalExpenses ?? 0);
-      } catch (err) {
-        console.error(err);
-        setExpenses([]);
-        setTotalExpenses(0);
-      } finally {
-        setExpensesLoading(false);
-      }
-    },
-    [token]
-  );
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        await refreshOrders();
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (token && user?.id) init();
-  }, [token, user?.id, refreshOrders]);
-
-  useEffect(() => {
-    if (activeTab === 'expenses') loadExpenses('today');
-    if (activeTab === 'history') loadExpenses(historyPeriod);
-  }, [activeTab, historyPeriod, loadExpenses]);
-
-  useEffect(() => {
-    const loadOrderDetail = async () => {
-      if (!selectedOrder || !token) return;
-      setOrderDetailLoading(true);
-      setNoteBody('');
-      try {
-        const detail = await getOrder(token, selectedOrder.id);
-        setSelectedOrder(detail);
-        setOrderNotes(detail.notes ?? []);
-      } catch (err) {
-        console.error(err);
-        setOrderNotes([]);
-      } finally {
-        setOrderDetailLoading(false);
-      }
-    };
-    loadOrderDetail();
-  }, [selectedOrder?.id, token]);
-
-  if (!user) return null;
+  const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
 
   const handleLogout = () => {
     logout();
     router.push('/login');
   };
 
-  const handleUpdateOrder = async (orderId: number, status: string) => {
-    if (!token) return;
+  const handleMarkRead = async (id: number) => {
+    await markNotificationRead(id);
+    refresh();
+  };
+
+  const handleMarkAllRead = async () => {
+    await markAllNotificationsRead();
+    refresh();
+  };
+
+  const handleExport = async () => {
+    if (!user?.id) return;
+    setExporting(true);
     try {
-      await updateOrder(token, orderId, { status });
-      await refreshOrders();
-      setSelectedOrder(null);
+      const blob = await exportCourierHistory(user.id, historyPeriod);
+      downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
     } catch (err) {
       console.error(err);
-    }
-  };
-
-  const handleAddNote = async () => {
-    if (!token || !selectedOrder || !noteBody.trim()) return;
-    setNoteSubmitting(true);
-    try {
-      await postOrderNote(token, selectedOrder.id, noteBody.trim());
-      const detail = await getOrder(token, selectedOrder.id);
-      setSelectedOrder(detail);
-      setOrderNotes(detail.notes ?? []);
-      setNoteBody('');
-    } catch (err) {
-      console.error(err);
+      alert(err instanceof Error ? err.message : 'Export uğursuz oldu');
     } finally {
-      setNoteSubmitting(false);
+      setExporting(false);
     }
   };
 
-  const handleCreateExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) return;
-    const amount = parseFloat(expenseForm.amount);
-    if (!amount || amount <= 0) {
-      setExpenseError('Düzgün məbləğ daxil edin');
-      return;
-    }
-    if (!expenseForm.description.trim()) {
-      setExpenseError('Təsvir daxil edin');
-      return;
-    }
-
-    setExpenseError('');
-    setExpenseSubmitting(true);
-    try {
-      const data = await createExpense(token, {
-        amount,
-        description: expenseForm.description.trim(),
-        category: expenseForm.category,
-      });
-      setExpenses(data.expenses ?? []);
-      setTotalExpenses(data.totalExpenses ?? 0);
-      setExpenseForm({ amount: '', description: '', category: 'fuel' });
-    } catch (err) {
-      setExpenseError(err instanceof Error ? err.message : 'Xəta baş verdi');
-    } finally {
-      setExpenseSubmitting(false);
-    }
-  };
-
-  const userDisplayId = user.license_code || user.email || '';
+  if (!user) return null;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <aside
-        style={{
-          width: '280px',
-          backgroundColor: '#ffffff',
-          borderRight: '1px solid #e5e7eb',
-          padding: '24px 20px',
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-          position: 'fixed',
-          height: '100vh',
-          overflowY: 'auto',
-        }}
-      >
+      <aside style={sidebarStyle}>
         <div style={{ marginBottom: '32px', textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>💧</div>
-          <h1 style={{ fontSize: '20px', fontWeight: '700', margin: '0 0 4px 0', color: '#1f2937' }}>
-            SuMan
-          </h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 4px', color: '#1f2937' }}>SuMan</h1>
           <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Kuryer Panel</p>
         </div>
 
-        <div
-          style={{
-            padding: '12px 16px',
-            backgroundColor: '#f9fafb',
-            borderRadius: '8px',
-            marginBottom: '24px',
-            borderLeft: '3px solid #10b981',
-          }}
-        >
-          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 4px 0', textTransform: 'uppercase' }}>
+        <div style={userBoxStyle}>
+          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 4px', textTransform: 'uppercase' }}>
             Daxil olmuş:
           </p>
-          <p style={{ fontSize: '13px', fontWeight: '600', color: '#1f2937', margin: '0 0 2px 0' }}>
-            {user.name}
-          </p>
-          {userDisplayId && (
-            <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0, wordBreak: 'break-all' }}>
-              {userDisplayId}
+          <p style={{ fontSize: '13px', fontWeight: 600, color: '#1f2937', margin: '0 0 2px' }}>{user.name}</p>
+          {user.company_name && (
+            <p style={{ fontSize: '12px', color: '#059669', margin: '0 0 4px', fontWeight: 500 }}>
+              {user.company_name}
             </p>
           )}
+          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0, wordBreak: 'break-all' }}>{user.email}</p>
         </div>
 
         <nav style={{ marginBottom: '32px' }}>
           {(
             [
-              { id: 'orders' as const, label: '📦 Sifarişlər' },
+              { id: 'orders' as const, label: '📦 Aktiv sifarişlər' },
               { id: 'completed' as const, label: '✅ Tamamlanan' },
               { id: 'expenses' as const, label: '💰 Əlavə xərclər' },
               { id: 'history' as const, label: '📈 Tarixçə' },
+              { id: 'notifications' as const, label: '🔔 Bildirişlər', badge: unreadCount },
             ] as const
           ).map((item) => (
             <button
@@ -265,203 +206,233 @@ export default function CourierDashboard() {
                 textAlign: 'left',
                 cursor: 'pointer',
                 fontSize: '13px',
-                fontWeight: activeTab === item.id ? '600' : '500',
+                fontWeight: activeTab === item.id ? 600 : 500,
                 color: activeTab === item.id ? '#1f2937' : '#6b7280',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {'badge' in item && item.badge > 0 && (
+                <span
+                  style={{
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                  }}
+                >
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
 
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%',
-            padding: '11px 14px',
-            backgroundColor: '#fee2e2',
-            color: '#dc2626',
-            border: '1px solid #fecaca',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: '600',
-          }}
-        >
+        <button onClick={handleLogout} style={logoutBtnStyle}>
           🚪 Çıxış
         </button>
       </aside>
 
-      <main style={{ marginLeft: '280px', flex: 1, padding: '32px', overflowY: 'auto' }}>
-        <div style={{ marginBottom: '32px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: '700', margin: 0, color: '#1f2937' }}>
-            {activeTab === 'orders' && 'Gözləyən Sifarişlər'}
+      <main style={mainStyle}>
+        <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0, color: '#1f2937' }}>
+            {activeTab === 'orders' && 'Aktiv Sifarişlər'}
             {activeTab === 'completed' && 'Tamamlanan Sifarişlər'}
             {activeTab === 'expenses' && 'Əlavə xərclər'}
             {activeTab === 'history' && 'Tarixçə'}
+            {activeTab === 'notifications' && 'Bildirişlər'}
           </h1>
-        </div>
+          <button
+            onClick={() => refresh()}
+            style={{
+              padding: '8px 14px',
+              fontSize: '13px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            ↻ Yenilə
+          </button>
+        </header>
 
-        {(activeTab === 'orders' || activeTab === 'completed') && (
+        {activeTab !== 'notifications' && (
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
               gap: '20px',
               marginBottom: '32px',
             }}
           >
-            <StatCard title="Gözləyən" value={stats.pendingOrders} icon="⏳" color="#f59e0b" />
-            <StatCard title="Bugün Tamamlanan" value={stats.completedToday} icon="✅" color="#10b981" />
-            <StatCard title="Toplam Çatdırılmış" value={stats.totalDelivered} icon="🚚" color="#3b82f6" />
+            <StatCard title="Aktiv" value={activeOrders.length} icon="📦" color="#f59e0b" />
+            <StatCard title="Bugün tamamlanan" value={completedToday} icon="✅" color="#10b981" />
+            <StatCard title="Ümumi tamamlanan" value={completedOrders.length} icon="🚚" color="#3b82f6" />
+            {activeTab === 'history' && (
+              <StatCard
+                title="Seçilmiş dövr gəliri"
+                value={`₼${historyRevenue.toFixed(2)}`}
+                icon="💰"
+                color="#8b5cf6"
+              />
+            )}
           </div>
         )}
 
         {activeTab === 'orders' && (
           <OrdersTable
+            orders={activeOrders}
             loading={loading}
-            orders={orders}
-            emptyMessage="Gözləyən sifariş yoxdur"
-            onSelect={setSelectedOrder}
+            emptyText="Aktiv sifariş yoxdur"
+            showStatus
+            onOpen={(id) => setSelectedOrderId(id)}
           />
         )}
 
         {activeTab === 'completed' && (
-          <div
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-            }}
-          >
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                  {['Müştəri', 'Ödəniş', 'Boş Bidon', 'Dolu Bidon', 'Tarix', ''].map((h) => (
-                    <th
-                      key={h}
-                      style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {completedOrders.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                      Tamamlanan sifariş yoxdur
-                    </td>
-                  </tr>
-                ) : (
-                  completedOrders.map((order) => (
-                    <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                      <td style={{ padding: '12px 16px', fontWeight: '500' }}>{order.name}</td>
-                      <td style={{ padding: '12px 16px' }}>{order.payment_type || '-'}</td>
-                      <td style={{ padding: '12px 16px' }}>{order.empty_bidons_returned}</td>
-                      <td style={{ padding: '12px 16px' }}>{order.full_bidons_given}</td>
-                      <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: '12px' }}>
-                        {order.completed_at
-                          ? new Date(order.completed_at).toLocaleDateString('az-AZ')
-                          : '-'}
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <button
-                          onClick={() => setSelectedOrder(order)}
-                          style={{
-                            padding: '6px 12px',
-                            backgroundColor: '#e5e7eb',
-                            color: '#1f2937',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                          }}
-                        >
-                          Qeydlər
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <OrdersTable
+            orders={completedOrders}
+            loading={loading}
+            emptyText="Tamamlanan sifariş yoxdur"
+            completed
+            onOpen={(id) => setSelectedOrderId(id)}
+          />
         )}
 
         {activeTab === 'expenses' && (
-          <div style={{ display: 'grid', gap: '24px', maxWidth: '720px' }}>
-            <ExpenseForm
-              form={expenseForm}
-              onChange={setExpenseForm}
-              onSubmit={handleCreateExpense}
-              submitting={expenseSubmitting}
-              error={expenseError}
-            />
-            <ExpensesList
-              expenses={expenses}
-              total={totalExpenses}
-              loading={expensesLoading}
-              title="Bugünkü xərclər"
-            />
-          </div>
+          <ExpensesSection period="today" showForm title="Bugünkü xərclər" />
         )}
 
         {activeTab === 'history' && (
-          <div style={{ maxWidth: '720px' }}>
-            <div style={{ marginBottom: '20px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {(
-                [
-                  { id: 'today' as const, label: 'Bu gün' },
-                  { id: 'week' as const, label: 'Həftə' },
-                  { id: 'month' as const, label: 'Ay' },
-                ] as const
-              ).map((p) => (
+          <div>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+              {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
                 <button
-                  key={p.id}
-                  onClick={() => setHistoryPeriod(p.id)}
+                  key={p}
+                  onClick={() => setHistoryPeriod(p)}
                   style={{
                     padding: '8px 16px',
                     borderRadius: '6px',
-                    border: '1px solid #e5e7eb',
-                    backgroundColor: historyPeriod === p.id ? '#10b981' : 'white',
-                    color: historyPeriod === p.id ? 'white' : '#374151',
+                    border: historyPeriod === p ? '2px solid #10b981' : '1px solid #e5e7eb',
+                    background: historyPeriod === p ? '#ecfdf5' : 'white',
                     cursor: 'pointer',
                     fontSize: '13px',
-                    fontWeight: '600',
+                    fontWeight: historyPeriod === p ? 600 : 400,
                   }}
                 >
-                  {p.label}
+                  {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
                 </button>
               ))}
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                style={{
+                  marginLeft: 'auto',
+                  padding: '8px 16px',
+                  backgroundColor: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: exporting ? 'wait' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {exporting ? 'Export...' : '📥 Excel'}
+              </button>
             </div>
-            <ExpensesList
-              expenses={expenses}
-              total={totalExpenses}
-              loading={expensesLoading}
-              title="Xərclər tarixçəsi"
-            />
+            <OrdersTable orders={historyOrders} loading={loading} emptyText="Bu dövrdə sifariş yoxdur" completed />
+            <div style={{ marginTop: '32px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', color: '#1f2937' }}>
+                Əlavə xərclər (tarixçə)
+              </h2>
+              <ExpensesSection
+                period={historyPeriod as ExpensePeriod}
+                title={
+                  historyPeriod === 'today'
+                    ? 'Bu gün'
+                    : historyPeriod === 'week'
+                      ? 'Həftə'
+                      : 'Ay'
+                }
+              />
+            </div>
           </div>
         )}
 
-        {selectedOrder && (
-          <OrderModal
-            order={selectedOrder}
-            notes={orderNotes}
-            loading={orderDetailLoading}
-            noteBody={noteBody}
-            onNoteBodyChange={setNoteBody}
-            onAddNote={handleAddNote}
-            noteSubmitting={noteSubmitting}
-            onClose={() => setSelectedOrder(null)}
-            onComplete={
-              selectedOrder.status !== 'completed'
-                ? () => handleUpdateOrder(selectedOrder.id, 'completed')
-                : undefined
-            }
+        {activeTab === 'notifications' && (
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            {unreadCount > 0 && (
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
+                <button
+                  onClick={handleMarkAllRead}
+                  style={{
+                    fontSize: '13px',
+                    color: '#10b981',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  Hamısını oxunmuş et
+                </button>
+              </div>
+            )}
+            {notifications.length === 0 ? (
+              <p style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>Bildiriş yoxdur</p>
+            ) : (
+              notifications.map((n) => (
+                <div
+                  key={n.id}
+                  style={{
+                    padding: '16px',
+                    borderBottom: '1px solid #f3f4f6',
+                    backgroundColor: n.read ? 'white' : '#f0fdf4',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>{n.message}</p>
+                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9ca3af' }}>
+                      {new Date(n.created_at).toLocaleString('az-AZ')}
+                    </p>
+                  </div>
+                  {!n.read && (
+                    <button
+                      onClick={() => handleMarkRead(n.id)}
+                      style={{
+                        flexShrink: 0,
+                        padding: '6px 10px',
+                        fontSize: '11px',
+                        border: '1px solid #10b981',
+                        color: '#10b981',
+                        background: 'white',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Oxundu
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {selectedOrderId !== null && (
+          <OrderDetailModal
+            orderId={selectedOrderId}
+            onClose={() => setSelectedOrderId(null)}
+            onUpdated={refresh}
           />
         )}
       </main>
@@ -470,434 +441,98 @@ export default function CourierDashboard() {
 }
 
 function OrdersTable({
-  loading,
   orders,
-  emptyMessage,
-  onSelect,
+  loading,
+  emptyText,
+  showStatus,
+  completed,
+  onOpen,
 }: {
-  loading: boolean;
   orders: Order[];
-  emptyMessage: string;
-  onSelect: (o: Order) => void;
+  loading: boolean;
+  emptyText: string;
+  showStatus?: boolean;
+  completed?: boolean;
+  onOpen?: (id: number) => void;
 }) {
   return (
-    <div
-      style={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-      }}
-    >
+    <div style={{ backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
         <thead>
           <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-            {['Müştəri', 'Ünvan', 'Bidon', 'Qiymət', 'Əməliyyat'].map((h) => (
-              <th
-                key={h}
-                style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600', color: '#6b7280' }}
-              >
-                {h}
-              </th>
-            ))}
+            <th style={thStyle}>Müştəri</th>
+            <th style={thStyle}>Ünvan</th>
+            {!completed && <th style={thStyle}>Bidon</th>}
+            {!completed && <th style={thStyle}>Cəmi (₼)</th>}
+            {showStatus && <th style={thStyle}>Status</th>}
+            {completed && <th style={thStyle}>Ödəniş</th>}
+            {completed && <th style={thStyle}>Boş / Dolu</th>}
+            {completed && <th style={thStyle}>Tarix</th>}
+            {onOpen && <th style={thStyle}>Əməliyyat</th>}
           </tr>
         </thead>
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
+              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
                 Yüklənir...
               </td>
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                {emptyMessage}
+              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
+                {emptyText}
               </td>
             </tr>
           ) : (
             orders.map((order) => (
               <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                <td style={{ padding: '12px 16px', fontWeight: '500' }}>{order.name}</td>
-                <td style={{ padding: '12px 16px', color: '#6b7280', fontSize: '12px' }}>
-                  {order.address}
-                </td>
-                <td style={{ padding: '12px 16px' }}>{order.bidons_count}</td>
-                <td style={{ padding: '12px 16px', fontWeight: '600' }}>
-                  ₼{order.price ? Number(order.price).toFixed(2) : '0.00'}
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  <button
-                    onClick={() => onSelect(order)}
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                    }}
-                  >
-                    Təfərrüat
-                  </button>
-                </td>
+                <td style={tdStyle}>{customerName(order)}</td>
+                <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>{order.address}</td>
+                {!completed && <td style={tdStyle}>{order.bidons_count}</td>}
+                {!completed && (
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>
+                    ₼{orderTotal(order).toFixed(2)}
+                  </td>
+                )}
+                {showStatus && <td style={tdStyle}>{statusLabel(order.status)}</td>}
+                {completed && <td style={tdStyle}>{paymentLabel(order.payment_type)}</td>}
+                {completed && (
+                  <td style={tdStyle}>
+                    {order.empty_bidons_returned ?? 0} / {order.full_bidons_given ?? order.bidons_count}
+                  </td>
+                )}
+                {completed && (
+                  <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>
+                    {order.completed_at
+                      ? new Date(order.completed_at).toLocaleDateString('az-AZ')
+                      : '—'}
+                  </td>
+                )}
+                {onOpen && (
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => onOpen(order.id)}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Aç
+                    </button>
+                  </td>
+                )}
               </tr>
             ))
           )}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ExpenseForm({
-  form,
-  onChange,
-  onSubmit,
-  submitting,
-  error,
-}: {
-  form: { amount: string; description: string; category: string };
-  onChange: (f: typeof form) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  submitting: boolean;
-  error: string;
-}) {
-  const inputStyle = {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '6px',
-    border: '1px solid #e5e7eb',
-    fontSize: '14px',
-    boxSizing: 'border-box' as const,
-  };
-
-  return (
-    <form
-      onSubmit={onSubmit}
-      style={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        padding: '24px',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-      }}
-    >
-      <h2 style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 16px 0' }}>Yeni xərc</h2>
-      <div style={{ display: 'grid', gap: '12px' }}>
-        <div>
-          <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-            Məbləğ (₼)
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.amount}
-            onChange={(e) => onChange({ ...form, amount: e.target.value })}
-            style={inputStyle}
-            required
-          />
-        </div>
-        <div>
-          <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-            Təsvir
-          </label>
-          <input
-            type="text"
-            placeholder="Məs: Yanacaq"
-            value={form.description}
-            onChange={(e) => onChange({ ...form, description: e.target.value })}
-            style={inputStyle}
-            required
-          />
-        </div>
-        <div>
-          <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-            Kateqoriya
-          </label>
-          <select
-            value={form.category}
-            onChange={(e) => onChange({ ...form, category: e.target.value })}
-            style={inputStyle}
-          >
-            {EXPENSE_CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      {error && (
-        <p style={{ color: '#dc2626', fontSize: '13px', marginTop: '12px' }}>{error}</p>
-      )}
-      <button
-        type="submit"
-        disabled={submitting}
-        style={{
-          marginTop: '16px',
-          padding: '10px 20px',
-          backgroundColor: '#10b981',
-          color: 'white',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: submitting ? 'not-allowed' : 'pointer',
-          fontWeight: '600',
-          opacity: submitting ? 0.6 : 1,
-        }}
-      >
-        {submitting ? 'Əlavə edilir...' : 'Xərc əlavə et'}
-      </button>
-    </form>
-  );
-}
-
-function ExpensesList({
-  expenses,
-  total,
-  loading,
-  title,
-}: {
-  expenses: Expense[];
-  total: number;
-  loading: boolean;
-  title: string;
-}) {
-  return (
-    <div
-      style={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        padding: '24px',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>{title}</h2>
-        <span style={{ fontSize: '18px', fontWeight: '700', color: '#10b981' }}>
-          Cəmi: ₼{Number(total).toFixed(2)}
-        </span>
-      </div>
-      {loading ? (
-        <p style={{ color: '#9ca3af', textAlign: 'center' }}>Yüklənir...</p>
-      ) : expenses.length === 0 ? (
-        <p style={{ color: '#9ca3af', textAlign: 'center' }}>Xərc qeydi yoxdur</p>
-      ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {expenses.map((exp, i) => (
-            <li
-              key={exp.id ?? i}
-              style={{
-                padding: '12px 0',
-                borderBottom: i < expenses.length - 1 ? '1px solid #f3f4f6' : 'none',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: '12px',
-              }}
-            >
-              <div>
-                <p style={{ margin: 0, fontWeight: '600', fontSize: '14px' }}>{exp.description}</p>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>
-                  {expenseCategoryLabel(exp.category)}
-                  {exp.created_at &&
-                    ` · ${new Date(exp.created_at).toLocaleString('az-AZ', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}`}
-                </p>
-              </div>
-              <span style={{ fontWeight: '700', whiteSpace: 'nowrap' }}>
-                ₼{Number(exp.amount).toFixed(2)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function OrderModal({
-  order,
-  notes,
-  loading,
-  noteBody,
-  onNoteBodyChange,
-  onAddNote,
-  noteSubmitting,
-  onClose,
-  onComplete,
-}: {
-  order: Order;
-  notes: OrderNote[];
-  loading: boolean;
-  noteBody: string;
-  onNoteBodyChange: (v: string) => void;
-  onAddNote: () => void;
-  noteSubmitting: boolean;
-  onClose: () => void;
-  onComplete?: () => void;
-}) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '16px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          maxWidth: '520px',
-          width: '100%',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Sifariş detallı</h2>
-
-        <DetailRow label="Müştəri" value={order.name} />
-        <DetailRow label="Ünvan" value={order.address} />
-        <DetailRow label="Bidon sayı" value={String(order.bidons_count)} />
-        <DetailRow
-          label="Qiymət"
-          value={`₼${order.price ? Number(order.price).toFixed(2) : '0.00'}`}
-        />
-
-        <div style={{ marginTop: '20px', marginBottom: '12px' }}>
-          <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', margin: '0 0 8px 0' }}>
-            Qeydlər
-          </p>
-          {loading ? (
-            <p style={{ fontSize: '13px', color: '#9ca3af' }}>Yüklənir...</p>
-          ) : notes.length === 0 ? (
-            <p style={{ fontSize: '13px', color: '#9ca3af' }}>Qeyd yoxdur</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '200px', overflowY: 'auto' }}>
-              {notes.map((note, i) => (
-                <div
-                  key={note.id ?? i}
-                  style={{
-                    padding: '10px 12px',
-                    backgroundColor: '#f9fafb',
-                    borderRadius: '6px',
-                    borderLeft: `3px solid ${note.author_role === 'admin' ? '#3b82f6' : '#10b981'}`,
-                  }}
-                >
-                  <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#6b7280' }}>
-                    <strong>{note.author_name}</strong>
-                    {' · '}
-                    {authorRoleLabel(note.author_role)}
-                    {note.created_at &&
-                      ` · ${new Date(note.created_at).toLocaleString('az-AZ', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}`}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>{note.body}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <textarea
-          placeholder="Qeyd yazın (məs. problem baş verdi)..."
-          value={noteBody}
-          onChange={(e) => onNoteBodyChange(e.target.value)}
-          rows={3}
-          style={{
-            width: '100%',
-            padding: '10px 12px',
-            borderRadius: '6px',
-            border: '1px solid #e5e7eb',
-            fontSize: '14px',
-            resize: 'vertical',
-            boxSizing: 'border-box',
-            marginBottom: '8px',
-          }}
-        />
-        <button
-          type="button"
-          onClick={onAddNote}
-          disabled={noteSubmitting || !noteBody.trim()}
-          style={{
-            padding: '8px 14px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: noteSubmitting || !noteBody.trim() ? 'not-allowed' : 'pointer',
-            fontSize: '13px',
-            fontWeight: '600',
-            opacity: noteSubmitting || !noteBody.trim() ? 0.5 : 1,
-            marginBottom: '20px',
-          }}
-        >
-          {noteSubmitting ? 'Göndərilir...' : 'Qeyd əlavə et'}
-        </button>
-
-        <div style={{ display: 'grid', gridTemplateColumns: onComplete ? '1fr 1fr' : '1fr', gap: '12px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '10px 16px',
-              backgroundColor: '#e5e7eb',
-              color: '#1f2937',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '13px',
-            }}
-          >
-            Bağla
-          </button>
-          {onComplete && (
-            <button
-              onClick={onComplete}
-              style={{
-                padding: '10px 16px',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: '600',
-                fontSize: '13px',
-              }}
-            >
-              ✅ Tamamla
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ marginBottom: '12px' }}>
-      <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>{label}</p>
-      <p style={{ fontSize: '14px', fontWeight: '600', margin: 0 }}>{value}</p>
     </div>
   );
 }
@@ -926,13 +561,60 @@ function StatCard({
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px 0', fontWeight: '500' }}>
-            {title}
-          </p>
-          <p style={{ fontSize: '28px', fontWeight: '700', color: '#1f2937', margin: 0 }}>{value}</p>
+          <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px', fontWeight: 500 }}>{title}</p>
+          <p style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937', margin: 0 }}>{value}</p>
         </div>
         <div style={{ fontSize: '28px' }}>{icon}</div>
       </div>
     </div>
   );
 }
+
+const sidebarStyle: React.CSSProperties = {
+  width: '280px',
+  backgroundColor: '#ffffff',
+  borderRight: '1px solid #e5e7eb',
+  padding: '24px 20px',
+  position: 'fixed',
+  height: '100vh',
+  overflowY: 'auto',
+};
+
+const mainStyle: React.CSSProperties = {
+  marginLeft: '280px',
+  flex: 1,
+  padding: '32px',
+  overflowY: 'auto',
+};
+
+const userBoxStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  backgroundColor: '#f9fafb',
+  borderRadius: '8px',
+  marginBottom: '24px',
+  borderLeft: '3px solid #10b981',
+};
+
+const logoutBtnStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '11px 14px',
+  backgroundColor: '#fee2e2',
+  color: '#dc2626',
+  border: '1px solid #fecaca',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '13px',
+  fontWeight: 600,
+};
+
+const thStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  textAlign: 'left',
+  fontWeight: 600,
+  color: '#6b7280',
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  color: '#1f2937',
+};

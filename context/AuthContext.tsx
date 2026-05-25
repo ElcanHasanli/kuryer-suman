@@ -2,13 +2,10 @@
 
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
-interface User {
-  id: number;
-  name: string;
-  role: string;
-  email?: string;
-  license_code?: string;
-}
+import { STORAGE_KEYS } from '@/lib/storage';
+import type { User } from '@/lib/types';
+
+export type { User };
 
 interface AuthContextType {
   user: User | null;
@@ -26,8 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Load from localStorage
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
+    const savedToken = localStorage.getItem(STORAGE_KEYS.token);
+    const savedUser = localStorage.getItem(STORAGE_KEYS.user);
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
@@ -37,15 +34,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = (userData: User, authToken: string) => {
     setUser(userData);
     setToken(authToken);
-    localStorage.setItem('token', authToken);
-    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem(STORAGE_KEYS.token, authToken);
+    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(userData));
   };
 
   const logout = () => {
     setUser(null);
     setToken(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    localStorage.removeItem(STORAGE_KEYS.token);
+    localStorage.removeItem(STORAGE_KEYS.user);
   };
 
   return (
