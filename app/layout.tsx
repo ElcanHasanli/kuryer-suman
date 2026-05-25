@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/context/AuthContext';
+import CapacitorInit from '@/components/CapacitorInit';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -21,7 +22,10 @@ export default function RootLayout({
   return (
     <html lang="az" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <CapacitorInit />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

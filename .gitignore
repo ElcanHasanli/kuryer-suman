@@ -173,6 +173,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Capacitor / native (mobile:setup sonrası)
+# android/ və ios/ commit etmək istəsəniz, aşağıdakı sətirləri silin
+/android
+/ios
+/out
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
