@@ -134,51 +134,13 @@ export default function OrderDetailModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '16px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          padding: '24px',
-          maxWidth: '480px',
-          width: '100%',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 16px', color: '#1f2937' }}>
-          Sifariş #{orderId}
-        </h2>
+    <div className="courier-modal-overlay" onClick={onClose}>
+      <div className="courier-modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="courier-modal__title">Sifariş #{orderId}</h2>
 
-        {loading && <p style={{ color: '#6b7280' }}>Yüklənir...</p>}
+        {loading && <p className="courier-empty">Yüklənir...</p>}
 
-        {error && (
-          <div
-            style={{
-              marginBottom: '12px',
-              padding: '10px',
-              backgroundColor: '#fef2f2',
-              borderRadius: '6px',
-              color: '#dc2626',
-              fontSize: '13px',
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {error && <div className="courier-error-box">{error}</div>}
 
         {order && !showCompleteForm && (
           <>
@@ -198,25 +160,20 @@ export default function OrderDetailModal({
               <DetailRow label="Qeyd" value={order.notes} />
             )}
 
-            <div style={{ marginTop: '16px', marginBottom: '12px' }}>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: '#374151', margin: '0 0 8px' }}>
-                Qeydlər
-              </p>
+            <div className="courier-notes-block">
+              <p className="courier-notes-block__title">Qeydlər</p>
               {orderNotes.length === 0 ? (
-                <p style={{ fontSize: '13px', color: '#9ca3af', margin: 0 }}>Qeyd yoxdur</p>
+                <p className="courier-empty" style={{ padding: '8px 0' }}>
+                  Qeyd yoxdur
+                </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
                   {orderNotes.map((note, i) => (
                     <div
                       key={note.id ?? i}
-                      style={{
-                        padding: '10px 12px',
-                        backgroundColor: '#f9fafb',
-                        borderRadius: '6px',
-                        borderLeft: `3px solid ${note.author_role === 'admin' ? '#3b82f6' : '#10b981'}`,
-                      }}
+                      className={`courier-note-item ${note.author_role === 'admin' ? 'courier-note-item--admin' : ''}`}
                     >
-                      <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#6b7280' }}>
+                      <p className="courier-note-item__meta">
                         <strong>{note.author_name}</strong>
                         {' · '}
                         {authorRoleLabel(note.author_role)}
@@ -228,7 +185,7 @@ export default function OrderDetailModal({
                             minute: '2-digit',
                           })}`}
                       </p>
-                      <p style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>{note.body}</p>
+                      <p className="courier-note-item__body">{note.body}</p>
                     </div>
                   ))}
                 </div>
@@ -236,20 +193,19 @@ export default function OrderDetailModal({
             </div>
 
             <textarea
+              className="courier-form-textarea"
               placeholder="Qeyd yazın (məs. problem baş verdi)..."
               value={noteBody}
               onChange={(e) => setNoteBody(e.target.value)}
               rows={2}
-              style={{ ...inputStyle, minHeight: '56px', resize: 'vertical', marginBottom: '8px' }}
+              style={{ marginBottom: '8px' }}
             />
             <button
               type="button"
               onClick={handleAddNote}
               disabled={noteSubmitting || !noteBody.trim()}
+              className="courier-btn courier-btn--primary courier-btn--block"
               style={{
-                ...btnPrimary,
-                flex: 'none',
-                width: '100%',
                 marginBottom: '16px',
                 opacity: noteSubmitting || !noteBody.trim() ? 0.5 : 1,
               }}
@@ -257,15 +213,8 @@ export default function OrderDetailModal({
               {noteSubmitting ? 'Göndərilir...' : 'Qeyd əlavə et'}
             </button>
 
-            <div
-              style={{
-                display: 'flex',
-                gap: '10px',
-                marginTop: '8px',
-                flexWrap: 'wrap',
-              }}
-            >
-              <button type="button" onClick={onClose} style={btnSecondary}>
+            <div className="courier-modal-actions">
+              <button type="button" onClick={onClose} className="courier-btn">
                 Bağla
               </button>
               {order.status === 'assigned' && (
@@ -273,7 +222,7 @@ export default function OrderDetailModal({
                   type="button"
                   onClick={handleStart}
                   disabled={submitting}
-                  style={btnPrimary}
+                  className="courier-btn courier-btn--primary"
                 >
                   {submitting ? '...' : '▶ Başladım'}
                 </button>
@@ -282,7 +231,7 @@ export default function OrderDetailModal({
                 <button
                   type="button"
                   onClick={() => setShowCompleteForm(true)}
-                  style={btnPrimary}
+                  className="courier-btn courier-btn--primary"
                 >
                   ✅ Tamamladım
                 </button>
@@ -297,9 +246,10 @@ export default function OrderDetailModal({
               {customerName(order)} — {order.address}
             </p>
 
-            <label style={labelStyle}>
+            <label className="courier-form-label">
               Ödəniş növü
               <select
+                className="courier-form-select"
                 value={paymentType}
                 onChange={(e) => {
                   const type = e.target.value as PaymentType;
@@ -310,7 +260,6 @@ export default function OrderDetailModal({
                     setAmountPaid(String(orderTotal(order)));
                   }
                 }}
-                style={inputStyle}
               >
                 <option value="cash">Nağd</option>
                 <option value="card">Kart</option>
@@ -318,73 +267,75 @@ export default function OrderDetailModal({
               </select>
             </label>
 
-            <label style={labelStyle}>
+            <label className="courier-form-label">
               Ödənilən məbləğ (₼)
               <input
+                className="courier-form-input"
                 type="number"
                 step="0.01"
                 min="0"
                 value={paymentType === 'credit' ? '0' : amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
-                style={{
-                  ...inputStyle,
-                  ...(paymentType === 'credit'
+                style={
+                  paymentType === 'credit'
                     ? { backgroundColor: '#f3f4f6', color: '#6b7280' }
-                    : {}),
-                }}
+                    : undefined
+                }
                 disabled={paymentType === 'credit'}
                 required
               />
               {paymentType === 'credit' && (
-                <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 400 }}>
-                  Nisyədə pul ödənilmir — borc müştəriyə yazılır
-                </span>
+                <span>Nisyədə pul ödənilmir — borc müştəriyə yazılır</span>
               )}
             </label>
 
-            <label style={labelStyle}>
+            <label className="courier-form-label">
               Qaytarılan boş bidon
               <input
+                className="courier-form-input"
                 type="number"
                 min="0"
                 value={emptyBidons}
                 onChange={(e) => setEmptyBidons(e.target.value)}
-                style={inputStyle}
               />
             </label>
 
-            <label style={labelStyle}>
+            <label className="courier-form-label">
               Verilən dolu bidon
               <input
+                className="courier-form-input"
                 type="number"
                 min="0"
                 value={fullBidons}
                 onChange={(e) => setFullBidons(e.target.value)}
-                style={inputStyle}
                 required
               />
             </label>
 
-            <label style={labelStyle}>
+            <label className="courier-form-label">
               Qeyd
               <textarea
+                className="courier-form-textarea"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                style={{ ...inputStyle, minHeight: '72px', resize: 'vertical' }}
                 placeholder="İstəyə bağlı"
               />
             </label>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+            <div className="courier-modal-actions">
               <button
                 type="button"
                 onClick={() => setShowCompleteForm(false)}
-                style={btnSecondary}
+                className="courier-btn"
                 disabled={submitting}
               >
                 Geri
               </button>
-              <button type="submit" disabled={submitting} style={btnPrimary}>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="courier-btn courier-btn--primary"
+              >
                 {submitting ? 'Göndərilir...' : 'Təsdiqlə'}
               </button>
             </div>
@@ -397,54 +348,9 @@ export default function OrderDetailModal({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ marginBottom: '12px' }}>
-      <p style={{ fontSize: '11px', color: '#9ca3af', margin: '0 0 2px', textTransform: 'uppercase' }}>
-        {label}
-      </p>
-      <p style={{ fontSize: '14px', margin: 0, color: '#1f2937', fontWeight: 500 }}>{value}</p>
+    <div className="courier-detail-row">
+      <p className="courier-detail-row__label">{label}</p>
+      <p className="courier-detail-row__value">{value}</p>
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '12px',
-  fontWeight: 600,
-  color: '#374151',
-  marginBottom: '14px',
-};
-
-const inputStyle: React.CSSProperties = {
-  display: 'block',
-  width: '100%',
-  marginTop: '6px',
-  padding: '10px 12px',
-  border: '1px solid #e5e7eb',
-  borderRadius: '6px',
-  fontSize: '14px',
-  boxSizing: 'border-box',
-};
-
-const btnSecondary: React.CSSProperties = {
-  flex: 1,
-  padding: '10px 16px',
-  backgroundColor: '#e5e7eb',
-  color: '#1f2937',
-  border: 'none',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: '13px',
-};
-
-const btnPrimary: React.CSSProperties = {
-  flex: 1,
-  padding: '10px 16px',
-  backgroundColor: '#10b981',
-  color: 'white',
-  border: 'none',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontWeight: 600,
-  fontSize: '13px',
-};

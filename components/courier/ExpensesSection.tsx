@@ -70,64 +70,41 @@ export default function ExpensesSection({
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '6px',
-    border: '1px solid #e5e7eb',
-    fontSize: '14px',
-    boxSizing: 'border-box',
-  };
-
   return (
-    <div style={{ display: 'grid', gap: '24px', maxWidth: '720px' }}>
+    <div className="expenses-layout">
       {showForm && (
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '24px',
-            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-          }}
-        >
-          <h2 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 16px' }}>Yeni xərc</h2>
-          <div style={{ display: 'grid', gap: '12px' }}>
-            <div>
-              <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                Məbləğ (₼)
-              </label>
+        <form onSubmit={handleSubmit} className="courier-panel courier-panel--padded">
+          <h2 className="courier-section-title">Yeni xərc</h2>
+          <div className="expenses-form__grid">
+            <label className="courier-form-label" style={{ marginBottom: 0 }}>
+              Məbləğ (₼)
               <input
+                className="courier-form-input"
                 type="number"
                 step="0.01"
                 min="0"
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                style={inputStyle}
                 required
               />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                Təsvir
-              </label>
+            </label>
+            <label className="courier-form-label" style={{ marginBottom: 0 }}>
+              Təsvir
               <input
+                className="courier-form-input"
                 type="text"
                 placeholder="Məs: Yanacaq"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                style={inputStyle}
                 required
               />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', color: '#6b7280', display: 'block', marginBottom: '4px' }}>
-                Kateqoriya
-              </label>
+            </label>
+            <label className="courier-form-label" style={{ marginBottom: 0 }}>
+              Kateqoriya
               <select
+                className="courier-form-select"
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                style={inputStyle}
               >
                 {EXPENSE_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -135,70 +112,38 @@ export default function ExpensesSection({
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
-          {error && <p style={{ color: '#dc2626', fontSize: '13px', marginTop: '12px' }}>{error}</p>}
+          {error && <p className="courier-error-box" style={{ marginTop: '12px' }}>{error}</p>}
           <button
             type="submit"
             disabled={submitting}
-            style={{
-              marginTop: '16px',
-              padding: '10px 20px',
-              backgroundColor: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              opacity: submitting ? 0.6 : 1,
-            }}
+            className="courier-btn courier-btn--primary"
+            style={{ marginTop: '16px', opacity: submitting ? 0.6 : 1 }}
           >
             {submitting ? 'Əlavə edilir...' : 'Xərc əlavə et'}
           </button>
         </form>
       )}
 
-      <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '8px',
-          padding: '24px',
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}
-        >
-          <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{title}</h2>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: '#10b981' }}>
-            Cəmi: ₼{Number(totalExpenses).toFixed(2)}
-          </span>
+      <div className="courier-panel courier-panel--padded">
+        <div className="expenses-list__head">
+          <h2 className="courier-section-title" style={{ margin: 0 }}>
+            {title}
+          </h2>
+          <span className="expenses-list__total">Cəmi: ₼{Number(totalExpenses).toFixed(2)}</span>
         </div>
         {loading ? (
-          <p style={{ color: '#9ca3af', textAlign: 'center' }}>Yüklənir...</p>
+          <p className="courier-empty">Yüklənir...</p>
         ) : expenses.length === 0 ? (
-          <p style={{ color: '#9ca3af', textAlign: 'center' }}>Xərc qeydi yoxdur</p>
+          <p className="courier-empty">Xərc qeydi yoxdur</p>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {expenses.map((exp, i) => (
-              <li
-                key={exp.id ?? i}
-                style={{
-                  padding: '12px 0',
-                  borderBottom: i < expenses.length - 1 ? '1px solid #f3f4f6' : 'none',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                }}
-              >
+              <li key={exp.id ?? i} className="expense-item">
                 <div>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: '14px' }}>{exp.description}</p>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                  <p className="expense-item__title">{exp.description}</p>
+                  <p className="expense-item__meta">
                     {expenseCategoryLabel(exp.category)}
                     {exp.created_at &&
                       ` · ${new Date(exp.created_at).toLocaleString('az-AZ', {
@@ -209,9 +154,7 @@ export default function ExpensesSection({
                       })}`}
                   </p>
                 </div>
-                <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  ₼{Number(exp.amount).toFixed(2)}
-                </span>
+                <span className="expense-item__amount">₼{Number(exp.amount).toFixed(2)}</span>
               </li>
             ))}
           </ul>

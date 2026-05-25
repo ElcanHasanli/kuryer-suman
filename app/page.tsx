@@ -21,15 +21,8 @@ export default function Home() {
   }, [isAuthenticated, user, router]);
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <p style={{ color: '#6b7280' }}>Yönləndirilir...</p>
+    <div className="courier-loading-page">
+      <p>Yönləndirilir...</p>
     </div>
   );
 }

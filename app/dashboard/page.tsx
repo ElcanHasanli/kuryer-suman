@@ -19,6 +19,27 @@ import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/ty
 
 type TabId = 'orders' | 'completed' | 'expenses' | 'history' | 'notifications';
 
+const NAV_ITEMS: {
+  id: TabId;
+  label: string;
+  short: string;
+  icon: string;
+}[] = [
+  { id: 'orders', label: '📦 Aktiv sifarişlər', short: 'Sifariş', icon: '📦' },
+  { id: 'completed', label: '✅ Tamamlanan', short: 'Bitmiş', icon: '✅' },
+  { id: 'expenses', label: '💰 Əlavə xərclər', short: 'Xərc', icon: '💰' },
+  { id: 'history', label: '📈 Tarixçə', short: 'Tarix', icon: '📈' },
+  { id: 'notifications', label: '🔔 Bildirişlər', short: 'Bildir', icon: '🔔' },
+];
+
+const PAGE_TITLES: Record<TabId, string> = {
+  orders: 'Aktiv Sifarişlər',
+  completed: 'Tamamlanan Sifarişlər',
+  expenses: 'Əlavə xərclər',
+  history: 'Tarixçə',
+  notifications: 'Bildirişlər',
+};
+
 function customerName(order: Order) {
   return order.name || order.customer_name || '—';
 }
@@ -57,6 +78,7 @@ export default function CourierDashboard() {
   const { user, token, logout, isAuthenticated } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('orders');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -105,8 +127,18 @@ export default function CourierDashboard() {
     }
   }, [token, user?.role, refresh]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [activeTab]);
 
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [menuOpen]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
   const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
 
   const historyOrders = completedOrders.filter((o) => {
@@ -128,6 +160,11 @@ export default function CourierDashboard() {
   });
 
   const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
+
+  const selectTab = (tab: TabId) => {
+    setActiveTab(tab);
+    setMenuOpen(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -160,116 +197,83 @@ export default function CourierDashboard() {
 
   if (!user) return null;
 
+  const renderNav = (variant: 'sidebar' | 'mobile') =>
+    NAV_ITEMS.map((item) => {
+      const isActive = activeTab === item.id;
+      const badge = item.id === 'notifications' ? unreadCount : 0;
+      return (
+        <button
+          key={`${variant}-${item.id}`}
+          type="button"
+          onClick={() => selectTab(item.id)}
+          className={`courier-nav__item ${isActive ? 'is-active' : ''}`}
+        >
+          <span>{variant === 'sidebar' ? item.label : `${item.icon} ${item.short}`}</span>
+          {badge > 0 && <span className="courier-nav__badge">{badge}</span>}
+        </button>
+      );
+    });
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
-      <aside style={sidebarStyle}>
-        <div style={{ marginBottom: '32px', textAlign: 'center' }}>
-          <div style={{ fontSize: '32px', marginBottom: '8px' }}>💧</div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 4px', color: '#1f2937' }}>SuMan</h1>
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0 }}>Kuryer Panel</p>
+    <div className="courier-app">
+      <div
+        className={`courier-sidebar-backdrop ${menuOpen ? 'is-visible' : ''}`}
+        onClick={() => setMenuOpen(false)}
+        aria-hidden={!menuOpen}
+      />
+
+      <aside className={`courier-sidebar ${menuOpen ? 'is-open' : ''}`}>
+        <div className="courier-sidebar__brand">
+          <div className="courier-sidebar__logo">💧</div>
+          <h1 className="courier-sidebar__title">SuMan</h1>
+          <p className="courier-sidebar__subtitle">Kuryer Panel</p>
         </div>
 
-        <div style={userBoxStyle}>
-          <p style={{ fontSize: '11px', color: '#6b7280', margin: '0 0 4px', textTransform: 'uppercase' }}>
-            Daxil olmuş:
-          </p>
-          <p style={{ fontSize: '13px', fontWeight: 600, color: '#1f2937', margin: '0 0 2px' }}>{user.name}</p>
+        <div className="courier-user-box">
+          <p className="courier-user-box__label">Daxil olmuş:</p>
+          <p className="courier-user-box__name">{user.name}</p>
           {user.company_name && (
-            <p style={{ fontSize: '12px', color: '#059669', margin: '0 0 4px', fontWeight: 500 }}>
-              {user.company_name}
-            </p>
+            <p className="courier-user-box__company">{user.company_name}</p>
           )}
-          <p style={{ fontSize: '11px', color: '#9ca3af', margin: 0, wordBreak: 'break-all' }}>{user.email}</p>
+          <p className="courier-user-box__email">{user.email}</p>
         </div>
 
-        <nav style={{ marginBottom: '32px' }}>
-          {(
-            [
-              { id: 'orders' as const, label: '📦 Aktiv sifarişlər' },
-              { id: 'completed' as const, label: '✅ Tamamlanan' },
-              { id: 'expenses' as const, label: '💰 Əlavə xərclər' },
-              { id: 'history' as const, label: '📈 Tarixçə' },
-              { id: 'notifications' as const, label: '🔔 Bildirişlər', badge: unreadCount },
-            ] as const
-          ).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              style={{
-                width: '100%',
-                padding: '11px 14px',
-                marginBottom: '6px',
-                backgroundColor: activeTab === item.id ? '#f3f4f6' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                borderLeft: activeTab === item.id ? '3px solid #10b981' : '3px solid transparent',
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: activeTab === item.id ? 600 : 500,
-                color: activeTab === item.id ? '#1f2937' : '#6b7280',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <span>{item.label}</span>
-              {'badge' in item && item.badge > 0 && (
-                <span
-                  style={{
-                    backgroundColor: '#ef4444',
-                    color: 'white',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    borderRadius: '10px',
-                  }}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
+        <nav className="courier-nav courier-nav--desktop-only">{renderNav('sidebar')}</nav>
 
-        <button onClick={handleLogout} style={logoutBtnStyle}>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="courier-btn courier-btn--danger courier-btn--block courier-sidebar__logout"
+        >
           🚪 Çıxış
         </button>
       </aside>
 
-      <main style={mainStyle}>
-        <header style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0, color: '#1f2937' }}>
-            {activeTab === 'orders' && 'Aktiv Sifarişlər'}
-            {activeTab === 'completed' && 'Tamamlanan Sifarişlər'}
-            {activeTab === 'expenses' && 'Əlavə xərclər'}
-            {activeTab === 'history' && 'Tarixçə'}
-            {activeTab === 'notifications' && 'Bildirişlər'}
-          </h1>
+      <main className="courier-main">
+        <div className="courier-topbar">
           <button
-            onClick={() => refresh()}
-            style={{
-              padding: '8px 14px',
-              fontSize: '13px',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-              background: 'white',
-              cursor: 'pointer',
-            }}
+            type="button"
+            className="courier-btn courier-topbar__menu"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Menyu"
           >
+            ☰
+          </button>
+          <h1 className="courier-topbar__title">{PAGE_TITLES[activeTab]}</h1>
+          <button type="button" className="courier-btn" onClick={() => refresh()}>
+            ↻
+          </button>
+        </div>
+
+        <header className="courier-page-header">
+          <h1 className="courier-page-header__title">{PAGE_TITLES[activeTab]}</h1>
+          <button type="button" className="courier-btn" onClick={() => refresh()}>
             ↻ Yenilə
           </button>
         </header>
 
         {activeTab !== 'notifications' && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: '20px',
-              marginBottom: '32px',
-            }}
-          >
+          <div className="courier-stats">
             <StatCard title="Aktiv" value={activeOrders.length} icon="📦" color="#f59e0b" />
             <StatCard title="Bugün tamamlanan" value={completedToday} icon="✅" color="#10b981" />
             <StatCard title="Ümumi tamamlanan" value={completedOrders.length} icon="🚚" color="#3b82f6" />
@@ -285,7 +289,7 @@ export default function CourierDashboard() {
         )}
 
         {activeTab === 'orders' && (
-          <OrdersTable
+          <OrdersList
             orders={activeOrders}
             loading={loading}
             emptyText="Aktiv sifariş yoxdur"
@@ -295,7 +299,7 @@ export default function CourierDashboard() {
         )}
 
         {activeTab === 'completed' && (
-          <OrdersTable
+          <OrdersList
             orders={completedOrders}
             loading={loading}
             emptyText="Tamamlanan sifariş yoxdur"
@@ -310,114 +314,78 @@ export default function CourierDashboard() {
 
         {activeTab === 'history' && (
           <div>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <div className="courier-toolbar">
               {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
                 <button
                   key={p}
+                  type="button"
                   onClick={() => setHistoryPeriod(p)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: historyPeriod === p ? '2px solid #10b981' : '1px solid #e5e7eb',
-                    background: historyPeriod === p ? '#ecfdf5' : 'white',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: historyPeriod === p ? 600 : 400,
-                  }}
+                  className={`courier-period-btn ${historyPeriod === p ? 'is-active' : ''}`}
                 >
                   {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
                 </button>
               ))}
               <button
+                type="button"
                 onClick={handleExport}
                 disabled={exporting}
-                style={{
-                  marginLeft: 'auto',
-                  padding: '8px 16px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: exporting ? 'wait' : 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                }}
+                className="courier-btn courier-btn--primary courier-toolbar__spacer"
               >
                 {exporting ? 'Export...' : '📥 Excel'}
               </button>
             </div>
-            <OrdersTable orders={historyOrders} loading={loading} emptyText="Bu dövrdə sifariş yoxdur" completed />
-            <div style={{ marginTop: '32px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', color: '#1f2937' }}>
-                Əlavə xərclər (tarixçə)
-              </h2>
-              <ExpensesSection
-                period={historyPeriod as ExpensePeriod}
-                title={
-                  historyPeriod === 'today'
-                    ? 'Bu gün'
-                    : historyPeriod === 'week'
-                      ? 'Həftə'
-                      : 'Ay'
-                }
-              />
-            </div>
+            <OrdersList
+              orders={historyOrders}
+              loading={loading}
+              emptyText="Bu dövrdə sifariş yoxdur"
+              completed
+            />
+            <h2 className="courier-section-title courier-section-title--spaced">
+              Əlavə xərclər (tarixçə)
+            </h2>
+            <ExpensesSection
+              period={historyPeriod as ExpensePeriod}
+              title={
+                historyPeriod === 'today' ? 'Bu gün' : historyPeriod === 'week' ? 'Həftə' : 'Ay'
+              }
+            />
           </div>
         )}
 
         {activeTab === 'notifications' && (
-          <div style={{ backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+          <div className="courier-panel">
             {unreadCount > 0 && (
               <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
                 <button
+                  type="button"
                   onClick={handleMarkAllRead}
-                  style={{
-                    fontSize: '13px',
-                    color: '#10b981',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                  }}
+                  className="courier-btn"
+                  style={{ border: 'none', color: '#10b981', padding: 0 }}
                 >
                   Hamısını oxunmuş et
                 </button>
               </div>
             )}
             {notifications.length === 0 ? (
-              <p style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>Bildiriş yoxdur</p>
+              <p className="courier-empty">Bildiriş yoxdur</p>
             ) : (
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  style={{
-                    padding: '16px',
-                    borderBottom: '1px solid #f3f4f6',
-                    backgroundColor: n.read ? 'white' : '#f0fdf4',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                  }}
+                  className={`notif-list__item ${n.read ? '' : 'notif-list__item--unread'}`}
                 >
                   <div>
-                    <p style={{ margin: 0, fontSize: '14px', color: '#1f2937' }}>{n.message}</p>
-                    <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9ca3af' }}>
+                    <p className="notif-list__message">{n.message}</p>
+                    <p className="notif-list__time">
                       {new Date(n.created_at).toLocaleString('az-AZ')}
                     </p>
                   </div>
                   {!n.read && (
                     <button
+                      type="button"
                       onClick={() => handleMarkRead(n.id)}
-                      style={{
-                        flexShrink: 0,
-                        padding: '6px 10px',
-                        fontSize: '11px',
-                        border: '1px solid #10b981',
-                        color: '#10b981',
-                        background: 'white',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                      }}
+                      className="courier-btn"
+                      style={{ flexShrink: 0, fontSize: '11px' }}
                     >
                       Oxundu
                     </button>
@@ -436,11 +404,32 @@ export default function CourierDashboard() {
           />
         )}
       </main>
+
+      <nav className="courier-bottom-nav" aria-label="Əsas naviqasiya">
+        {NAV_ITEMS.map((item) => {
+          const isActive = activeTab === item.id;
+          const badge = item.id === 'notifications' ? unreadCount : 0;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => selectTab(item.id)}
+              className={`courier-bottom-nav__item ${isActive ? 'is-active' : ''}`}
+            >
+              <span className="courier-bottom-nav__wrap">
+                <span className="courier-bottom-nav__icon">{item.icon}</span>
+                {badge > 0 && <span className="courier-bottom-nav__badge">{badge}</span>}
+              </span>
+              <span>{item.short}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
 
-function OrdersTable({
+function OrdersList({
   orders,
   loading,
   emptyText,
@@ -455,84 +444,138 @@ function OrdersTable({
   completed?: boolean;
   onOpen?: (id: number) => void;
 }) {
+  if (loading) {
+    return <p className="courier-empty courier-panel courier-panel--padded">Yüklənir...</p>;
+  }
+
+  if (orders.length === 0) {
+    return <p className="courier-empty courier-panel courier-panel--padded">{emptyText}</p>;
+  }
+
   return (
-    <div style={{ backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-            <th style={thStyle}>Müştəri</th>
-            <th style={thStyle}>Ünvan</th>
-            {!completed && <th style={thStyle}>Bidon</th>}
-            {!completed && <th style={thStyle}>Cəmi (₼)</th>}
-            {showStatus && <th style={thStyle}>Status</th>}
-            {completed && <th style={thStyle}>Ödəniş</th>}
-            {completed && <th style={thStyle}>Boş / Dolu</th>}
-            {completed && <th style={thStyle}>Tarix</th>}
-            {onOpen && <th style={thStyle}>Əməliyyat</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
+    <div className="courier-panel">
+      <div className="orders-table-wrap">
+        <table className="orders-table">
+          <thead>
             <tr>
-              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                Yüklənir...
-              </td>
+              <th>Müştəri</th>
+              <th>Ünvan</th>
+              {!completed && <th>Bidon</th>}
+              {!completed && <th>Cəmi (₼)</th>}
+              {showStatus && <th>Status</th>}
+              {completed && <th>Ödəniş</th>}
+              {completed && <th>Boş / Dolu</th>}
+              {completed && <th>Tarix</th>}
+              {onOpen && <th>Əməliyyat</th>}
             </tr>
-          ) : orders.length === 0 ? (
-            <tr>
-              <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>
-                {emptyText}
-              </td>
-            </tr>
-          ) : (
-            orders.map((order) => (
-              <tr key={order.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                <td style={tdStyle}>{customerName(order)}</td>
-                <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>{order.address}</td>
-                {!completed && <td style={tdStyle}>{order.bidons_count}</td>}
+          </thead>
+          <tbody>
+            {orders.map((order) => (
+              <tr key={order.id}>
+                <td className="cell-strong">{customerName(order)}</td>
+                <td className="cell-muted">{order.address}</td>
+                {!completed && <td>{order.bidons_count}</td>}
                 {!completed && (
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>
-                    ₼{orderTotal(order).toFixed(2)}
+                  <td className="cell-strong">₼{orderTotal(order).toFixed(2)}</td>
+                )}
+                {showStatus && <td>{statusLabel(order.status)}</td>}
+                {completed && <td>{paymentLabel(order.payment_type)}</td>}
+                {completed && (
+                  <td>
+                    {order.empty_bidons_returned ?? 0} /{' '}
+                    {order.full_bidons_given ?? order.bidons_count}
                   </td>
                 )}
-                {showStatus && <td style={tdStyle}>{statusLabel(order.status)}</td>}
-                {completed && <td style={tdStyle}>{paymentLabel(order.payment_type)}</td>}
                 {completed && (
-                  <td style={tdStyle}>
-                    {order.empty_bidons_returned ?? 0} / {order.full_bidons_given ?? order.bidons_count}
-                  </td>
-                )}
-                {completed && (
-                  <td style={{ ...tdStyle, fontSize: '12px', color: '#6b7280' }}>
+                  <td className="cell-muted">
                     {order.completed_at
                       ? new Date(order.completed_at).toLocaleDateString('az-AZ')
                       : '—'}
                   </td>
                 )}
                 {onOpen && (
-                  <td style={tdStyle}>
+                  <td>
                     <button
+                      type="button"
                       onClick={() => onOpen(order.id)}
-                      style={{
-                        padding: '6px 12px',
-                        backgroundColor: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                      }}
+                      className="courier-btn courier-btn--primary"
                     >
                       Aç
                     </button>
                   </td>
                 )}
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="orders-cards">
+        {orders.map((order) => (
+          <article key={order.id} className="order-card">
+            <div className="order-card__head">
+              <h3 className="order-card__name">{customerName(order)}</h3>
+              {showStatus && (
+                <span className="courier-btn" style={{ fontSize: '11px', padding: '4px 8px' }}>
+                  {statusLabel(order.status)}
+                </span>
+              )}
+            </div>
+            <dl className="order-card__meta">
+              <div>
+                <dt>Ünvan</dt>
+                <dd>{order.address}</dd>
+              </div>
+              {!completed && (
+                <>
+                  <div>
+                    <dt>Bidon</dt>
+                    <dd>{order.bidons_count}</dd>
+                  </div>
+                  <div>
+                    <dt>Cəmi</dt>
+                    <dd>₼{orderTotal(order).toFixed(2)}</dd>
+                  </div>
+                </>
+              )}
+              {completed && (
+                <>
+                  <div>
+                    <dt>Ödəniş</dt>
+                    <dd>{paymentLabel(order.payment_type)}</dd>
+                  </div>
+                  <div>
+                    <dt>Boş / Dolu</dt>
+                    <dd>
+                      {order.empty_bidons_returned ?? 0} /{' '}
+                      {order.full_bidons_given ?? order.bidons_count}
+                    </dd>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <dt>Tarix</dt>
+                    <dd>
+                      {order.completed_at
+                        ? new Date(order.completed_at).toLocaleDateString('az-AZ')
+                        : '—'}
+                    </dd>
+                  </div>
+                </>
+              )}
+            </dl>
+            {onOpen && (
+              <div className="order-card__actions">
+                <button
+                  type="button"
+                  onClick={() => onOpen(order.id)}
+                  className="courier-btn courier-btn--primary courier-btn--block"
+                >
+                  Aç
+                </button>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -549,72 +592,14 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div
-      style={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        padding: '20px',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
-        border: '1px solid #e5e7eb',
-        borderTop: `3px solid ${color}`,
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div className="courier-stat-card" style={{ ['--stat-color' as string]: color }}>
+      <div className="courier-stat-card__row">
         <div>
-          <p style={{ fontSize: '12px', color: '#9ca3af', margin: '0 0 8px', fontWeight: 500 }}>{title}</p>
-          <p style={{ fontSize: '28px', fontWeight: 700, color: '#1f2937', margin: 0 }}>{value}</p>
+          <p className="courier-stat-card__label">{title}</p>
+          <p className="courier-stat-card__value">{value}</p>
         </div>
-        <div style={{ fontSize: '28px' }}>{icon}</div>
+        <div className="courier-stat-card__icon">{icon}</div>
       </div>
     </div>
   );
 }
-
-const sidebarStyle: React.CSSProperties = {
-  width: '280px',
-  backgroundColor: '#ffffff',
-  borderRight: '1px solid #e5e7eb',
-  padding: '24px 20px',
-  position: 'fixed',
-  height: '100vh',
-  overflowY: 'auto',
-};
-
-const mainStyle: React.CSSProperties = {
-  marginLeft: '280px',
-  flex: 1,
-  padding: '32px',
-  overflowY: 'auto',
-};
-
-const userBoxStyle: React.CSSProperties = {
-  padding: '12px 16px',
-  backgroundColor: '#f9fafb',
-  borderRadius: '8px',
-  marginBottom: '24px',
-  borderLeft: '3px solid #10b981',
-};
-
-const logoutBtnStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '11px 14px',
-  backgroundColor: '#fee2e2',
-  color: '#dc2626',
-  border: '1px solid #fecaca',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontSize: '13px',
-  fontWeight: 600,
-};
-
-const thStyle: React.CSSProperties = {
-  padding: '12px 16px',
-  textAlign: 'left',
-  fontWeight: 600,
-  color: '#6b7280',
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: '12px 16px',
-  color: '#1f2937',
-};
