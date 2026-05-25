@@ -51,6 +51,7 @@ export interface Notification {
   read: boolean;
   created_at: string;
   order_id?: number;
+  type?: string;
 }
 
 export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';

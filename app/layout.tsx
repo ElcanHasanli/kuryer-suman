@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/context/AuthContext';
 import CapacitorInit from '@/components/CapacitorInit';
+import CourierPushNotifications from '@/components/CourierPushNotifications';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <AuthProvider>
           <CapacitorInit />
+          <CourierPushNotifications />
           {children}
         </AuthProvider>
       </body>

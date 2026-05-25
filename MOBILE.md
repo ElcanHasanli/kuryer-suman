@@ -34,9 +34,16 @@ Android Studio-da:
 1. **Build → Build Bundle(s) / APK(s) → Build APK(s)**
 2. Debug APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-Terminaldan debug APK:
+Terminaldan debug APK (Java/Android Studio lazımdır):
 
 ```bash
+npm run mobile:apk:debug
+```
+
+`Unable to locate a Java Runtime` görsəniz — skript Android Studio JDK-sını avtomatik tapır. Əl ilə:
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 npm run mobile:apk:debug
 ```
 

@@ -219,6 +219,13 @@ export async function completeOrder(id: number, data: CompleteOrderPayload) {
   });
 }
 
+export async function registerPushDeviceToken(token: string, platform: string) {
+  return api<{ message: string }>('/api/notifications/device-token', {
+    method: 'POST',
+    body: JSON.stringify({ token, platform }),
+  });
+}
+
 export async function getNotifications() {
   return api<Notification[]>('/api/notifications');
 }
