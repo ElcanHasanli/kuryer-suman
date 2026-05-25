@@ -48,12 +48,20 @@ npm run mobile:apk:release
 
 ## iOS (Xcode)
 
+Hər web dəyişikliyindən sonra **mütləq**:
+
 ```bash
 npm run mobile:sync
 npm run mobile:ios
 ```
 
-Xcode-da komanda seçin → **Product → Run** (simulator və ya cihaz).
+Xcode-da:
+
+1. **Product → Clean Build Folder** (⇧⌘K)
+2. Simulyator/cihazda köhnə «SuMan Kuryer» tətbiqini silin (uzun bas → Delete)
+3. **Product → Run** (⌘R)
+
+Yalnız Xcode-da ▶ basmaq kifayət deyil — əvvəl terminalda `mobile:sync` olmalıdır.
 
 ## İki iş rejimi
 

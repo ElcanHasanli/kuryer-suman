@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
@@ -36,6 +36,72 @@ export class ApiError extends Error {
   }
 }
 
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+function buildHeaders(
+  options: RequestInit,
+  token: string | null
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+  if (options.headers) {
+    const extra = new Headers(options.headers);
+    extra.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  return headers;
+}
+
+function parseErrorMessage(data: unknown, fallback: string): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const msg = (data as { error?: string }).error;
+    if (msg) return msg;
+  }
+  return fallback;
+}
+
+async function nativeRequest(
+  url: string,
+  method: HttpMethod,
+  headers: Record<string, string>,
+  body?: string,
+  responseType: 'json' | 'blob' = 'json'
+): Promise<{ status: number; data: unknown }> {
+  try {
+    const response = await CapacitorHttp.request({
+      url,
+      method,
+      headers,
+      data: body ? JSON.parse(body) : undefined,
+      responseType: responseType === 'blob' ? 'blob' : 'json',
+    });
+    return { status: response.status, data: response.data };
+  } catch {
+    throw new ApiError(
+      'Şəbəkə xətası — internet və ya server əlçatan deyil',
+      0
+    );
+  }
+}
+
+function blobFromNativeData(data: unknown): Blob {
+  if (data instanceof Blob) return data;
+  if (typeof data === 'string') {
+    return new Blob([data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Blob([data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  }
+  return new Blob([JSON.stringify(data ?? '')], { type: 'application/octet-stream' });
+}
+
 async function api<T = unknown>(
   path: string,
   options: RequestInit = {},
@@ -46,16 +112,39 @@ async function api<T = unknown>(
       ? localStorage.getItem(STORAGE_KEYS.token)
       : null;
 
+  const url = `${API}${path}`;
+  const method = (options.method || 'GET').toUpperCase() as HttpMethod;
+  const headers = buildHeaders(options, token);
+  const body =
+    typeof options.body === 'string' ? options.body : undefined;
+
+  const wantsBlob =
+    path.includes('/export') ||
+    (typeof options.headers === 'object' &&
+      options.headers !== null &&
+      'Accept' in options.headers);
+
+  if (Capacitor.isNativePlatform()) {
+    const { status, data } = await nativeRequest(
+      url,
+      method,
+      headers,
+      body,
+      wantsBlob ? 'blob' : 'json'
+    );
+
+    if (status >= 400) {
+      throw new ApiError(parseErrorMessage(data, `HTTP ${status}`), status);
+    }
+
+    if (status === 204) return undefined as T;
+    if (wantsBlob) return blobFromNativeData(data) as T;
+    return data as T;
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${API}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...options.headers,
-      },
-    });
+    res = await fetch(url, { ...options, headers, body });
   } catch {
     throw new ApiError(
       'Şəbəkə xətası — internet və ya server əlçatan deyil',
@@ -65,10 +154,7 @@ async function api<T = unknown>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(
-      (err as { error?: string }).error || res.statusText,
-      res.status
-    );
+    throw new ApiError(parseErrorMessage(err, res.statusText), res.status);
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -81,9 +167,7 @@ async function api<T = unknown>(
     return res.blob() as Promise<T>;
   }
 
-  if (res.status === 204) {
-    return undefined as T;
-  }
+  if (res.status === 204) return undefined as T;
 
   const text = await res.text();
   if (!text) return undefined as T;
