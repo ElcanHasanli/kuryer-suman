@@ -6,7 +6,7 @@ import { login } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 const LoginPage = () => {
-  const [email, setEmail] = useState('');
+  const [licenseCode, setLicenseCode] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,14 +37,14 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      const data = await login(email, password);
+      const data = await login(licenseCode, password);
       authLogin(data.user, data.token);
       setSuccess(true);
       setTimeout(() => {
         router.push('/dashboard');
       }, 500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Giriş uğursuz oldu');
       setLoading(false);
     }
   };
@@ -198,13 +198,13 @@ const LoginPage = () => {
             </h2>
 
             <form onSubmit={handleSubmit}>
-              {/* Email Input */}
+              {/* License code */}
               <div style={{ position: 'relative', marginBottom: '20px' }}>
                 <input
-                  type="email"
-                  placeholder="courier@suman.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  placeholder="Lisenziya kodu"
+                  value={licenseCode}
+                  onChange={(e) => setLicenseCode(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '12px 12px 12px 40px',
