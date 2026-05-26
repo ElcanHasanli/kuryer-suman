@@ -14,6 +14,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/api';
+import { formatAppDate, isTodayInApp, matchesAppPeriod } from '@/lib/dates';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
 import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
@@ -61,17 +62,6 @@ function paymentLabel(type?: string | null) {
     credit: 'Nisyə',
   };
   return type ? map[type] || type : '—';
-}
-
-function isToday(dateStr?: string) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
 }
 
 export default function CourierDashboard() {
@@ -139,25 +129,11 @@ export default function CourierDashboard() {
   }, [menuOpen]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
+  const completedToday = completedOrders.filter((o) => isTodayInApp(o.completed_at)).length;
 
-  const historyOrders = completedOrders.filter((o) => {
-    if (!o.completed_at) return false;
-    const d = new Date(o.completed_at);
-    const now = new Date();
-    if (historyPeriod === 'today') return isToday(o.completed_at);
-    if (historyPeriod === 'week') {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      return d >= weekAgo;
-    }
-    if (historyPeriod === 'month') {
-      const monthAgo = new Date(now);
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      return d >= monthAgo;
-    }
-    return true;
-  });
+  const historyOrders = completedOrders.filter((o) =>
+    matchesAppPeriod(o.completed_at, historyPeriod)
+  );
 
   const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
 
@@ -377,7 +353,7 @@ export default function CourierDashboard() {
                   <div>
                     <p className="notif-list__message">{n.message}</p>
                     <p className="notif-list__time">
-                      {new Date(n.created_at).toLocaleString('az-AZ')}
+                      {formatAppDate(n.created_at)}
                     </p>
                   </div>
                   {!n.read && (
@@ -488,9 +464,7 @@ function OrdersList({
                 )}
                 {completed && (
                   <td className="cell-muted">
-                    {order.completed_at
-                      ? new Date(order.completed_at).toLocaleDateString('az-AZ')
-                      : '—'}
+                    {formatAppDate(order.completed_at)}
                   </td>
                 )}
                 {onOpen && (
@@ -554,9 +528,7 @@ function OrdersList({
                   <div style={{ gridColumn: '1 / -1' }}>
                     <dt>Tarix</dt>
                     <dd>
-                      {order.completed_at
-                        ? new Date(order.completed_at).toLocaleDateString('az-AZ')
-                        : '—'}
+                      {formatAppDate(order.completed_at)}
                     </dd>
                   </div>
                 </>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { createExpense, getExpenses } from '@/lib/api';
+import { formatAppDateTime, matchesAppPeriod } from '@/lib/dates';
 import type { Expense, ExpensePeriod } from '@/lib/types';
 import { EXPENSE_CATEGORIES, expenseCategoryLabel } from '@/lib/types';
 
@@ -26,9 +27,11 @@ export default function ExpensesSection({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getExpenses(period);
-      setExpenses(data.expenses ?? []);
-      setTotalExpenses(data.totalExpenses ?? 0);
+      const data = await getExpenses('month');
+      const all = data.expenses ?? [];
+      const filtered = all.filter((exp) => matchesAppPeriod(exp.created_at, period));
+      setExpenses(filtered);
+      setTotalExpenses(filtered.reduce((sum, exp) => sum + Number(exp.amount), 0));
     } catch {
       setExpenses([]);
       setTotalExpenses(0);
@@ -55,14 +58,13 @@ export default function ExpensesSection({
     setError('');
     setSubmitting(true);
     try {
-      const data = await createExpense({
+      await createExpense({
         amount,
         description: form.description.trim(),
         category: form.category,
       });
-      setExpenses(data.expenses ?? []);
-      setTotalExpenses(data.totalExpenses ?? 0);
       setForm({ amount: '', description: '', category: 'fuel' });
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Xəta baş verdi');
     } finally {
@@ -146,7 +148,7 @@ export default function ExpensesSection({
                   <p className="expense-item__meta">
                     {expenseCategoryLabel(exp.category)}
                     {exp.created_at &&
-                      ` · ${new Date(exp.created_at).toLocaleString('az-AZ', {
+                      ` · ${formatAppDateTime(exp.created_at, {
                         day: 'numeric',
                         month: 'short',
                         hour: '2-digit',

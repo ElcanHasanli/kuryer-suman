@@ -244,7 +244,7 @@ export async function exportCourierHistory(
   startDate?: string,
   endDate?: string
 ) {
-  const params = new URLSearchParams({ period });
+  const params = new URLSearchParams({ period, timezone: 'Asia/Baku' });
   if (period === 'custom' && startDate && endDate) {
     params.set('startDate', startDate);
     params.set('endDate', endDate);
@@ -275,7 +275,7 @@ export async function postOrderNote(orderId: number, body: string) {
 }
 
 export async function getExpenses(period: ExpensePeriod) {
-  return api<ExpensesResponse>(`/api/expenses?period=${period}`);
+  return api<ExpensesResponse>(`/api/expenses?period=${period}&timezone=Asia/Baku`);
 }
 
 export async function createExpense(data: {
