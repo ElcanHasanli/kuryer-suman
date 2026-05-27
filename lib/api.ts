@@ -1,6 +1,8 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { assertValidXlsxBlob, blobFromBinaryData } from './binary';
+import { asArray } from './safeData';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
@@ -94,19 +96,38 @@ async function nativeRequest(
   }
 }
 
-function blobFromNativeData(data: unknown): Blob {
-  if (data instanceof Blob) return data;
-  if (typeof data === 'string') {
-    return new Blob([data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+async function fetchBinary(path: string): Promise<Blob> {
+  const token =
+    typeof window !== 'undefined'
+      ? localStorage.getItem(STORAGE_KEYS.token)
+      : null;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
     });
+  } catch {
+    throw new ApiError(
+      'Şəbəkə xətası — internet və ya server əlçatan deyil',
+      0
+    );
   }
-  if (data instanceof ArrayBuffer) {
-    return new Blob([data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(parseErrorMessage(err, `HTTP ${res.status}`), res.status);
   }
-  return new Blob([JSON.stringify(data ?? '')], { type: 'application/octet-stream' });
+
+  const blob = await res.blob();
+  return assertValidXlsxBlob(blob);
+}
+
+async function blobFromNativeData(data: unknown): Promise<Blob> {
+  const blob = blobFromBinaryData(data);
+  return assertValidXlsxBlob(blob);
 }
 
 async function api<T = unknown>(
@@ -145,7 +166,7 @@ async function api<T = unknown>(
     }
 
     if (status === 204) return undefined as T;
-    if (wantsBlob) return blobFromNativeData(data) as T;
+    if (wantsBlob) return (await blobFromNativeData(data)) as T;
     return data as T;
   }
 
@@ -171,7 +192,7 @@ async function api<T = unknown>(
     contentType.includes('excel') ||
     contentType.includes('vnd.openxmlformats')
   ) {
-    return res.blob() as Promise<T>;
+    return (await assertValidXlsxBlob(await res.blob())) as T;
   }
 
   if (res.status === 204) return undefined as T;
@@ -204,7 +225,8 @@ export async function getOrders(params?: { status?: Order['status'] }) {
   const query = params?.status
     ? `?${new URLSearchParams({ status: params.status }).toString()}`
     : '';
-  return api<Order[]>(`/api/orders${query}`);
+  const data = await api<unknown>(`/api/orders${query}`);
+  return asArray<Order>(data);
 }
 
 export async function getCompletedOrders() {
@@ -234,7 +256,8 @@ export async function registerPushDeviceToken(token: string, platform: string) {
 }
 
 export async function getNotifications() {
-  return api<Notification[]>('/api/notifications');
+  const data = await api<unknown>('/api/notifications');
+  return asArray<Notification>(data);
 }
 
 export async function markNotificationRead(id: number) {
@@ -256,9 +279,20 @@ export async function exportCourierHistory(
     params.set('startDate', startDate);
     params.set('endDate', endDate);
   }
-  return api<Blob>(
-    `/api/orders/courier/${courierId}/export?${params.toString()}`
-  );
+  const path = `/api/orders/courier/${courierId}/export?${params.toString()}`;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      return await fetchBinary(path);
+    } catch (err) {
+      const msg = errorMessage(err);
+      if (!/şəbəkə|network|failed to fetch/i.test(msg)) {
+        throw err instanceof ApiError ? err : new ApiError(msg, 0);
+      }
+    }
+  }
+
+  return api<Blob>(path);
 }
 
 export async function downloadBlob(blob: Blob, filename: string): Promise<string> {

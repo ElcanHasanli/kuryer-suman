@@ -24,8 +24,11 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (!isReady) return;
-    if (isAuthenticated && user?.role === 'courier') {
-      router.replace('/dashboard');
+    if (
+      isAuthenticated &&
+      (user?.role || '').toString().toLowerCase() === 'courier'
+    ) {
+      router.replace('/dashboard/');
     }
   }, [isAuthenticated, isReady, user, router]);
 
@@ -50,7 +53,7 @@ const LoginPage = () => {
       authLogin(data.user, data.token);
       setSuccess(true);
       setTimeout(() => {
-        router.push('/dashboard');
+        router.replace('/dashboard/');
       }, 500);
     } catch (err) {
       setError(

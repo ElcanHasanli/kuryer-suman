@@ -108,12 +108,13 @@ export default function CourierDashboard() {
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      router.replace('/login/');
       return;
     }
-    if (user && user.role !== 'courier') {
+    const role = (user?.role || '').toString().toLowerCase();
+    if (user && role && role !== 'courier') {
       logout();
-      router.replace('/login');
+      router.replace('/login/');
     }
   }, [isAuthenticated, isReady, user, router, logout]);
 

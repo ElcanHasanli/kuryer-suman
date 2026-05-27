@@ -11,13 +11,13 @@ export default function Home() {
   useEffect(() => {
     if (!isReady) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      router.replace('/login/');
       return;
     }
-    if (user?.role === 'courier') {
-      router.replace('/dashboard');
+    if ((user?.role || '').toString().toLowerCase() === 'courier') {
+      router.replace('/dashboard/');
     } else {
-      router.replace('/login');
+      router.replace('/login/');
     }
   }, [isAuthenticated, isReady, user, router]);
 

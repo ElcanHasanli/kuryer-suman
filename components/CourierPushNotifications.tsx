@@ -11,9 +11,12 @@ import {
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useAuth } from '@/context/AuthContext';
 import { getNotifications, registerPushDeviceToken } from '@/lib/api';
+import { asArray } from '@/lib/safeData';
+import type { Notification } from '@/lib/types';
 
 const CHANNEL_ID = 'courier_orders';
 const POLL_MS = 25_000;
+const ANDROID_PUSH_DELAY_MS = 5000;
 
 async function ensureAndroidChannel() {
   if (Capacitor.getPlatform() !== 'android') return;
@@ -53,14 +56,17 @@ export default function CourierPushNotifications() {
   const bootstrapped = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || user?.role !== 'courier') return;
+    const role = (user?.role || '').toString().toLowerCase();
+    if (!isAuthenticated || role !== 'courier') return;
 
     let intervalId: ReturnType<typeof setInterval> | undefined;
     let appListener: { remove: () => void } | undefined;
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
 
     const pollNotifications = async () => {
       try {
-        const list = await getNotifications();
+        const list = asArray<Notification>(await getNotifications());
 
         if (!bootstrapped.current) {
           list.forEach((n) => knownIds.current.add(n.id));
@@ -92,7 +98,9 @@ export default function CourierPushNotifications() {
           return;
         }
 
-        if (Capacitor.isNativePlatform()) {
+        const isAndroid = Capacitor.getPlatform() === 'android';
+
+        if (Capacitor.isNativePlatform() && !isAndroid) {
           await PushNotifications.addListener('registration', async (ev) => {
             if (!ev.value) return;
             try {
@@ -114,7 +122,7 @@ export default function CourierPushNotifications() {
           });
 
           await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-            router.push('/dashboard');
+            router.push('/dashboard/');
           });
 
           const pushPerm = await PushNotifications.requestPermissions();
@@ -134,9 +142,14 @@ export default function CourierPushNotifications() {
       }
     };
 
-    void setup();
+    const delay = Capacitor.getPlatform() === 'android' ? ANDROID_PUSH_DELAY_MS : 0;
+    delayTimer = setTimeout(() => {
+      if (!cancelled) void setup();
+    }, delay);
 
     return () => {
+      cancelled = true;
+      if (delayTimer) clearTimeout(delayTimer);
       if (intervalId) clearInterval(intervalId);
       appListener?.remove();
       void PushNotifications.removeAllListeners();

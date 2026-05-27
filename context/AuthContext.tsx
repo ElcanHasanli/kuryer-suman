@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useCallback,
+} from 'react';
 
 import { STORAGE_KEYS } from '@/lib/storage';
 import type { User } from '@/lib/types';
@@ -18,43 +24,49 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function readStoredAuth(): { user: User | null; token: string | null } {
+  if (typeof window === 'undefined') {
+    return { user: null, token: null };
+  }
+  try {
+    const savedToken = localStorage.getItem(STORAGE_KEYS.token);
+    const savedUser = localStorage.getItem(STORAGE_KEYS.user);
+    if (savedToken && savedUser) {
+      return { token: savedToken, user: JSON.parse(savedUser) as User };
+    }
+  } catch {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    localStorage.removeItem(STORAGE_KEYS.user);
+  }
+  return { user: null, token: null };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isReady, setIsReady] = useState(false);
+  const stored = readStoredAuth();
+  const [user, setUser] = useState<User | null>(stored.user);
+  const [token, setToken] = useState<string | null>(stored.token);
+  const [isReady, setIsReady] = useState(typeof window === 'undefined');
 
   useEffect(() => {
-    // Load from localStorage
-    try {
-      const savedToken = localStorage.getItem(STORAGE_KEYS.token);
-      const savedUser = localStorage.getItem(STORAGE_KEYS.user);
-      if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      }
-    } catch {
-      localStorage.removeItem(STORAGE_KEYS.token);
-      localStorage.removeItem(STORAGE_KEYS.user);
-      setToken(null);
-      setUser(null);
-    } finally {
-      setIsReady(true);
-    }
+    const next = readStoredAuth();
+    setToken(next.token);
+    setUser(next.user);
+    setIsReady(true);
   }, []);
 
-  const login = (userData: User, authToken: string) => {
+  const login = useCallback((userData: User, authToken: string) => {
     setUser(userData);
     setToken(authToken);
     localStorage.setItem(STORAGE_KEYS.token, authToken);
     localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(userData));
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setUser(null);
     setToken(null);
     localStorage.removeItem(STORAGE_KEYS.token);
     localStorage.removeItem(STORAGE_KEYS.user);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
