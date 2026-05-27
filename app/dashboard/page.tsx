@@ -16,6 +16,7 @@ import {
   markNotificationRead,
 } from '@/lib/api';
 import { formatAppDate, isTodayInApp, matchesAppPeriod } from '@/lib/dates';
+import { filterCourierActiveOrders } from '@/lib/courierOrders';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
 import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
@@ -88,7 +89,7 @@ export default function CourierDashboard() {
         getCompletedOrders().catch(() => [] as Order[]),
         getNotifications().catch(() => [] as Notification[]),
       ]);
-      const active = ordersData.filter((o) => o.status !== 'completed');
+      const active = filterCourierActiveOrders(ordersData);
       const completed =
         completedData.length > 0
           ? completedData
@@ -130,6 +131,15 @@ export default function CourierDashboard() {
       document.body.style.overflow = '';
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (
+      selectedOrderId !== null &&
+      !activeOrders.some((o) => o.id === selectedOrderId)
+    ) {
+      setSelectedOrderId(null);
+    }
+  }, [activeOrders, selectedOrderId]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const completedToday = completedOrders.filter((o) => isTodayInApp(o.completed_at)).length;

@@ -33,6 +33,8 @@ export interface Order {
   full_bidons_given?: number | null;
   completed_at?: string;
   created_at?: string;
+  updated_at?: string;
+  assigned_at?: string;
   surname?: string;
   customer_phone?: string;
 }
