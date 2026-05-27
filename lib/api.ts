@@ -9,6 +9,11 @@ import type {
   Order,
   OrderNote,
   User,
+  WarehousePeriod,
+  WarehouseSummaryResponse,
+  WarehouseUpdatePayload,
+  WarehouseUpdateRecord,
+  WarehouseUpdateResponse,
 } from './types';
 
 /** Production API — mobil tətbiqdə həmişə bu istifadə olunur */
@@ -287,4 +292,21 @@ export async function createExpense(data: {
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+export async function getWarehouseSummary() {
+  return api<WarehouseSummaryResponse>('/api/warehouse/summary');
+}
+
+export async function submitWarehouseUpdate(data: WarehouseUpdatePayload) {
+  return api<WarehouseUpdateResponse>('/api/warehouse/update', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getWarehouseUpdates(period: WarehousePeriod = 'week') {
+  return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
+    `/api/warehouse/updates?period=${period}&timezone=Asia/Baku`
+  );
 }

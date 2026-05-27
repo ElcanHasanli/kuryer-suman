@@ -102,3 +102,58 @@ export function parseOrderNotes(
   if (Array.isArray(notes)) return notes;
   return [];
 }
+
+export type WarehousePeriod = 'today' | 'week' | 'month';
+
+export interface WarehouseStock {
+  full_count: number;
+  empty_count: number;
+  updated_at?: string;
+  updated_by_name?: string;
+}
+
+export interface WarehouseCustomersSummary {
+  total_active_bidons: number;
+  customer_count: number;
+}
+
+export interface WarehouseUpdateRecord {
+  id?: number;
+  empty_in?: number;
+  full_in?: number;
+  full_out?: number;
+  exit_full?: number | null;
+  remaining_full: number;
+  remaining_empty?: number | null;
+  notes?: string | null;
+  created_at?: string;
+  courier_name?: string;
+}
+
+export interface WarehouseSummaryResponse {
+  warehouse: WarehouseStock;
+  customers: WarehouseCustomersSummary;
+  last_update?: WarehouseUpdateRecord | null;
+}
+
+export interface WarehouseUpdatePayload {
+  empty_in?: number;
+  full_in?: number;
+  full_out?: number;
+  exit_full?: number;
+  remaining_full: number;
+  remaining_empty?: number;
+  notes?: string;
+}
+
+export interface WarehouseCalculation {
+  mismatch?: boolean;
+  expected_full?: number;
+  previous_full?: number;
+}
+
+export interface WarehouseUpdateResponse {
+  stock: WarehouseStock;
+  update: WarehouseUpdateRecord;
+  calculation: WarehouseCalculation;
+}

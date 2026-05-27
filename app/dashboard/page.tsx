@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
 import ExpensesSection from '@/components/courier/ExpensesSection';
+import WarehouseSection from '@/components/courier/WarehouseSection';
 import {
   downloadBlob,
   exportCourierHistory,
@@ -18,7 +19,7 @@ import { formatAppDate, isTodayInApp, matchesAppPeriod } from '@/lib/dates';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
 import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
-type TabId = 'orders' | 'completed' | 'expenses' | 'history' | 'notifications';
+type TabId = 'orders' | 'completed' | 'expenses' | 'warehouse' | 'history' | 'notifications';
 
 const NAV_ITEMS: {
   id: TabId;
@@ -29,6 +30,7 @@ const NAV_ITEMS: {
   { id: 'orders', label: '📦 Aktiv sifarişlər', short: 'Sifariş', icon: '📦' },
   { id: 'completed', label: '✅ Tamamlanan', short: 'Bitmiş', icon: '✅' },
   { id: 'expenses', label: '💰 Əlavə xərclər', short: 'Xərc', icon: '💰' },
+  { id: 'warehouse', label: '💧 Su doldurma', short: 'Anbar', icon: '💧' },
   { id: 'history', label: '📈 Tarixçə', short: 'Tarix', icon: '📈' },
   { id: 'notifications', label: '🔔 Bildirişlər', short: 'Bildir', icon: '🔔' },
 ];
@@ -37,6 +39,7 @@ const PAGE_TITLES: Record<TabId, string> = {
   orders: 'Aktiv Sifarişlər',
   completed: 'Tamamlanan Sifarişlər',
   expenses: 'Əlavə xərclər',
+  warehouse: 'Su doldurma',
   history: 'Tarixçə',
   notifications: 'Bildirişlər',
 };
@@ -287,6 +290,8 @@ export default function CourierDashboard() {
         {activeTab === 'expenses' && (
           <ExpensesSection period="today" showForm title="Bugünkü xərclər" />
         )}
+
+        {activeTab === 'warehouse' && <WarehouseSection />}
 
         {activeTab === 'history' && (
           <div>
