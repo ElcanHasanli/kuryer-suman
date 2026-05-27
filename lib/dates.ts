@@ -16,15 +16,20 @@ export function parseAppDate(dateStr: string): Date {
 type DateParts = { year: number; month: number; day: number };
 
 export function getAppDateParts(date: Date): DateParts {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: APP_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: APP_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
 
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return { year: get('year'), month: get('month'), day: get('day') };
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+    return { year: get('year'), month: get('month'), day: get('day') };
+  } catch {
+    // Fallback for older WebViews with partial Intl timezone support.
+    return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
+  }
 }
 
 export function isSameAppDay(a: Date, b: Date): boolean {
@@ -67,7 +72,11 @@ export function formatAppDate(dateStr?: string): string {
   if (!dateStr) return '—';
   const d = parseAppDate(dateStr);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('az-AZ', { timeZone: APP_TIMEZONE });
+  try {
+    return d.toLocaleDateString('az-AZ', { timeZone: APP_TIMEZONE });
+  } catch {
+    return d.toLocaleDateString('az-AZ');
+  }
 }
 
 export function formatAppDateTime(
@@ -77,5 +86,9 @@ export function formatAppDateTime(
   if (!dateStr) return '';
   const d = parseAppDate(dateStr);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('az-AZ', { timeZone: APP_TIMEZONE, ...options });
+  try {
+    return d.toLocaleString('az-AZ', { timeZone: APP_TIMEZONE, ...options });
+  } catch {
+    return d.toLocaleString('az-AZ', options);
+  }
 }

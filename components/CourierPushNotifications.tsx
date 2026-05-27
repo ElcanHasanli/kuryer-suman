@@ -84,50 +84,54 @@ export default function CourierPushNotifications() {
     };
 
     const setup = async () => {
-      await ensureAndroidChannel();
+      try {
+        await ensureAndroidChannel();
 
-      const localPerm = await LocalNotifications.requestPermissions();
-      if (localPerm.display !== 'granted' && Capacitor.isNativePlatform()) {
-        return;
-      }
-
-      if (Capacitor.isNativePlatform()) {
-        await PushNotifications.addListener('registration', async (ev) => {
-          if (!ev.value) return;
-          try {
-            await registerPushDeviceToken(ev.value, Capacitor.getPlatform());
-          } catch {
-            // server token endpoint yoxdursa polling işləyir
-          }
-        });
-
-        await PushNotifications.addListener('registrationError', () => {
-          // FCM: google-services.json və Firebase Android app lazımdır
-        });
-
-        await PushNotifications.addListener('pushNotificationReceived', (n) => {
-          const title = n.title || '📦 Yeni sifariş təyin edildi';
-          const body = n.body || '';
-          const orderId = n.data?.orderId ? Number(n.data.orderId) : undefined;
-          void showBanner(title, body, orderId);
-        });
-
-        await PushNotifications.addListener('pushNotificationActionPerformed', () => {
-          router.push('/dashboard');
-        });
-
-        const pushPerm = await PushNotifications.requestPermissions();
-        if (pushPerm.receive === 'granted') {
-          await PushNotifications.register();
+        const localPerm = await LocalNotifications.requestPermissions();
+        if (localPerm.display !== 'granted' && Capacitor.isNativePlatform()) {
+          return;
         }
+
+        if (Capacitor.isNativePlatform()) {
+          await PushNotifications.addListener('registration', async (ev) => {
+            if (!ev.value) return;
+            try {
+              await registerPushDeviceToken(ev.value, Capacitor.getPlatform());
+            } catch {
+              // server token endpoint yoxdursa polling işləyir
+            }
+          });
+
+          await PushNotifications.addListener('registrationError', () => {
+            // FCM: google-services.json və Firebase Android app lazımdır
+          });
+
+          await PushNotifications.addListener('pushNotificationReceived', (n) => {
+            const title = n.title || '📦 Yeni sifariş təyin edildi';
+            const body = n.body || '';
+            const orderId = n.data?.orderId ? Number(n.data.orderId) : undefined;
+            void showBanner(title, body, orderId);
+          });
+
+          await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+            router.push('/dashboard');
+          });
+
+          const pushPerm = await PushNotifications.requestPermissions();
+          if (pushPerm.receive === 'granted') {
+            await PushNotifications.register();
+          }
+        }
+
+        await pollNotifications();
+        intervalId = setInterval(pollNotifications, POLL_MS);
+
+        appListener = await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) void pollNotifications();
+        });
+      } catch (err) {
+        console.error('Push init failed', err);
       }
-
-      await pollNotifications();
-      intervalId = setInterval(pollNotifications, POLL_MS);
-
-      appListener = await App.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) void pollNotifications();
-      });
     };
 
     void setup();

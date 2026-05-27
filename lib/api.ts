@@ -1,4 +1,6 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
@@ -260,12 +262,54 @@ export async function exportCourierHistory(
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
+  if (Capacitor.isNativePlatform()) {
+    void (async () => {
+      try {
+        const base64 = await blobToBase64(blob);
+        const path = `exports/${Date.now()}-${filename}`;
+        const saved = await Filesystem.writeFile({
+          path,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        await Share.share({
+          title: 'Tarixçə export',
+          text: filename,
+          url: saved.uri,
+          dialogTitle: 'Excel faylını paylaş',
+        });
+      } catch (err) {
+        console.error('Native export failed', err);
+        alert('Excel export alınmadı. Zəhmət olmasa yenidən cəhd edin.');
+      }
+    })();
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const value = reader.result;
+      if (typeof value !== 'string') {
+        reject(new Error('Blob conversion failed'));
+        return;
+      }
+      const idx = value.indexOf('base64,');
+      resolve(idx >= 0 ? value.slice(idx + 7) : value);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Blob read failed'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 export async function getOrderNotes(orderId: number) {
