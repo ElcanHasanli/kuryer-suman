@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import CourierPushNotifications from '@/components/CourierPushNotifications';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
@@ -69,7 +70,7 @@ function paymentLabel(type?: string | null) {
 }
 
 export default function CourierDashboard() {
-  const { user, token, logout, isAuthenticated } = useAuth();
+  const { user, token, logout, isAuthenticated, isReady } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('orders');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -105,6 +106,7 @@ export default function CourierDashboard() {
   }, [token]);
 
   useEffect(() => {
+    if (!isReady) return;
     if (!isAuthenticated) {
       router.replace('/login');
       return;
@@ -113,7 +115,7 @@ export default function CourierDashboard() {
       logout();
       router.replace('/login');
     }
-  }, [isAuthenticated, user, router, logout]);
+  }, [isAuthenticated, isReady, user, router, logout]);
 
   useEffect(() => {
     if (token && user?.role === 'courier') {
@@ -175,7 +177,8 @@ export default function CourierDashboard() {
     setExporting(true);
     try {
       const blob = await exportCourierHistory(user.id, historyPeriod);
-      downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
+      const message = await downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
+      alert(message);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : 'Export uğursuz oldu');
@@ -416,6 +419,7 @@ export default function CourierDashboard() {
           );
         })}
       </nav>
+      <CourierPushNotifications />
     </div>
   );
 }

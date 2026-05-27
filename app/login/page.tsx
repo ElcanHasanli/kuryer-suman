@@ -16,17 +16,18 @@ const LoginPage = () => {
   const [success, setSuccess] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const router = useRouter();
-  const { login: authLogin, isAuthenticated, user } = useAuth();
+  const { login: authLogin, isAuthenticated, user, isReady } = useAuth();
 
   useEffect(() => {
     setLicenseCode(getLicenseCode());
   }, []);
 
   useEffect(() => {
+    if (!isReady) return;
     if (isAuthenticated && user?.role === 'courier') {
       router.replace('/dashboard');
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, isReady, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

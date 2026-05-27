@@ -261,30 +261,42 @@ export async function exportCourierHistory(
   );
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+export async function downloadBlob(blob: Blob, filename: string): Promise<string> {
+  if (blob.size === 0) {
+    throw new ApiError('Excel faylı boş gəldi (0 байт).', 0);
+  }
+
   if (Capacitor.isNativePlatform()) {
-    void (async () => {
-      try {
-        const base64 = await blobToBase64(blob);
-        const path = `exports/${Date.now()}-${filename}`;
-        const saved = await Filesystem.writeFile({
-          path,
-          data: base64,
-          directory: Directory.Cache,
-          recursive: true,
-        });
-        await Share.share({
-          title: 'Tarixçə export',
-          text: filename,
-          url: saved.uri,
-          dialogTitle: 'Excel faylını paylaş',
-        });
-      } catch (err) {
-        console.error('Native export failed', err);
-        alert('Excel export alınmadı. Zəhmət olmasa yenidən cəhd edin.');
+    try {
+      const base64 = await blobToBase64(blob);
+      const path = `exports/${Date.now()}-${filename}`;
+      const saved = await Filesystem.writeFile({
+        path,
+        data: base64,
+        directory: Directory.Cache,
+        recursive: true,
+      });
+      await Share.share({
+        title: 'Tarixçə export',
+        text: filename,
+        url: saved.uri,
+        dialogTitle: 'Excel faylını paylaş',
+      });
+      return 'Paylaşım pəncərəsi açıldı — “Fayllara saxla” və ya Drive seçin.';
+    } catch (err) {
+      const msg = errorMessage(err);
+      // iOS bəzi build-lərdə plugin hələ native-ə düşməyə bilər.
+      if (Capacitor.getPlatform() === 'ios' && /not implemented/i.test(msg)) {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          const file = new File([blob], filename, {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          });
+          await navigator.share({ title: filename, files: [file] });
+          return 'Paylaşım pəncərəsi açıldı — “Fayllara saxla” və ya Drive seçin.';
+        }
       }
-    })();
-    return;
+      throw new ApiError(`Excel export alınmadı: ${msg}`, 0);
+    }
   }
 
   const url = URL.createObjectURL(blob);
@@ -293,6 +305,7 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+  return 'Excel faylı yükləndi.';
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
@@ -310,6 +323,17 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('Blob read failed'));
     reader.readAsDataURL(blob);
   });
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return 'Naməlum xəta';
+  }
 }
 
 export async function getOrderNotes(orderId: number) {

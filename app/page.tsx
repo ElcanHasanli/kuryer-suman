@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
 export default function Home() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, isReady } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    if (!isReady) return;
     if (!isAuthenticated) {
       router.replace('/login');
       return;
@@ -18,7 +19,7 @@ export default function Home() {
     } else {
       router.replace('/login');
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, isReady, user, router]);
 
   return (
     <div className="courier-loading-page">
