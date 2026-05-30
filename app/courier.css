@@ -675,10 +675,6 @@
 }
 
 /* Bottom nav (mobile) */
-.courier-mobile-logout {
-  display: none;
-}
-
 .date-filter {
   margin-bottom: 12px;
 }
@@ -1167,19 +1163,7 @@
     margin-left: 0;
     width: 100%;
     padding: 16px;
-    padding-bottom: calc(128px + env(safe-area-inset-bottom));
-  }
-
-  .courier-mobile-logout {
-    display: block;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: calc(56px + env(safe-area-inset-bottom));
-    z-index: 79;
-    padding: 8px 16px;
-    background: #fff;
-    border-top: 1px solid #e5e7eb;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
 
   .courier-topbar {

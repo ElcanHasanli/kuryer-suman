@@ -73,6 +73,7 @@ export function buildHistoryExportBlob(options: {
   rows.push([
     'Tarix',
     'Müştəri',
+    'Ünvan',
     'Alınan (₼)',
     'Ödəniş',
     'Qeyd',
@@ -90,6 +91,7 @@ export function buildHistoryExportBlob(options: {
     rows.push([
       order.completed_at ? formatAppDate(order.completed_at) : '—',
       customerName(order),
+      order.address || '—',
       round2(orderRevenue(order)),
       paymentLabel(order.payment_type),
       orderNotesText(order) || '—',
@@ -99,7 +101,7 @@ export function buildHistoryExportBlob(options: {
   }
 
   if (sortedOrders.length === 0) {
-    rows.push(['—', 'Sifariş yoxdur', 0, '—', '—', 0, 0]);
+    rows.push(['—', 'Sifariş yoxdur', '—', 0, '—', '—', 0, 0]);
   }
 
   rows.push([]);
@@ -136,6 +138,7 @@ export function buildHistoryExportBlob(options: {
   sheet['!cols'] = [
     { wch: 16 },
     { wch: 24 },
+    { wch: 32 },
     { wch: 12 },
     { wch: 10 },
     { wch: 28 },

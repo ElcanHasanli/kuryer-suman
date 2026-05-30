@@ -430,15 +430,6 @@ export default function CourierDashboard() {
         )}
       </main>
 
-      <div className="courier-mobile-logout">
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="courier-btn courier-btn--danger courier-btn--block"
-        >
-          🚪 Çıxış
-        </button>
-      </div>
 
       <nav className="courier-bottom-nav" aria-label="Əsas naviqasiya">
         {NAV_ITEMS.map((item) => {
