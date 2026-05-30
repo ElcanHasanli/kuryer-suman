@@ -56,9 +56,11 @@ export interface Notification {
   type?: string;
 }
 
-export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';
+export type DateFilterPeriod = 'yesterday' | 'today' | 'custom';
 
-export type ExpensePeriod = 'today' | 'week' | 'month';
+export type HistoryPeriod = DateFilterPeriod;
+
+export type ExpensePeriod = DateFilterPeriod;
 
 export interface OrderNote {
   id?: number;
@@ -105,7 +107,7 @@ export function parseOrderNotes(
   return [];
 }
 
-export type WarehousePeriod = 'today' | 'week' | 'month';
+export type WarehousePeriod = DateFilterPeriod;
 
 export interface WarehouseStock {
   full_count: number;

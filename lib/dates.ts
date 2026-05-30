@@ -1,6 +1,11 @@
-import type { ExpensePeriod, HistoryPeriod } from './types';
+import type { DateFilterPeriod, ExpensePeriod, HistoryPeriod } from './types';
 
 export const APP_TIMEZONE = 'Asia/Baku';
+
+export type DateRange = {
+  startDate: string;
+  endDate: string;
+};
 
 /** API/DB often sends timestamps without timezone — treat as UTC. */
 export function parseAppDate(dateStr: string): Date {
@@ -27,7 +32,6 @@ export function getAppDateParts(date: Date): DateParts {
     const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
     return { year: get('year'), month: get('month'), day: get('day') };
   } catch {
-    // Fallback for older WebViews with partial Intl timezone support.
     return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
   }
 }
@@ -45,27 +49,83 @@ export function isTodayInApp(dateStr?: string): boolean {
   return isSameAppDay(d, new Date());
 }
 
+export function formatInputDate(parts: DateParts): string {
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+export function todayInputDate(): string {
+  return formatInputDate(getAppDateParts(new Date()));
+}
+
+export function yesterdayInputDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return formatInputDate(getAppDateParts(d));
+}
+
+export function daysAgoInputDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return formatInputDate(getAppDateParts(d));
+}
+
+export function isDateInAppRange(
+  dateStr: string | undefined,
+  startDate: string,
+  endDate: string
+): boolean {
+  if (!dateStr || !startDate || !endDate) return false;
+  const d = parseAppDate(dateStr);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const dp = getAppDateParts(d);
+  const sp = getAppDateParts(parseAppDate(startDate));
+  const ep = getAppDateParts(parseAppDate(endDate));
+  const key = (p: DateParts) => p.year * 10000 + p.month * 100 + p.day;
+
+  const dKey = key(dp);
+  return dKey >= key(sp) && dKey <= key(ep);
+}
+
+export function getEffectiveDateRange(
+  period: HistoryPeriod | DateFilterPeriod,
+  customRange?: DateRange
+): DateRange {
+  if (period === 'custom' && customRange?.startDate && customRange?.endDate) {
+    return {
+      startDate: customRange.startDate,
+      endDate: customRange.endDate,
+    };
+  }
+  if (period === 'yesterday') {
+    const y = yesterdayInputDate();
+    return { startDate: y, endDate: y };
+  }
+  const today = todayInputDate();
+  return { startDate: today, endDate: today };
+}
+
+export function matchesHistoryFilter(
+  dateStr: string | undefined,
+  period: HistoryPeriod | DateFilterPeriod,
+  customRange?: DateRange
+): boolean {
+  if (!dateStr) return false;
+  const range = getEffectiveDateRange(period, customRange);
+  return isDateInAppRange(dateStr, range.startDate, range.endDate);
+}
+
+export function formatDateRangeLabel(range: DateRange): string {
+  if (range.startDate === range.endDate) return range.startDate;
+  return `${range.startDate} — ${range.endDate}`;
+}
+
+/** @deprecated use matchesHistoryFilter */
 export function matchesAppPeriod(
   dateStr: string | undefined,
   period: HistoryPeriod | ExpensePeriod
 ): boolean {
-  if (!dateStr) return false;
-  const d = parseAppDate(dateStr);
-  if (Number.isNaN(d.getTime())) return false;
-
-  const now = new Date();
-  if (period === 'today') return isSameAppDay(d, now);
-  if (period === 'week') {
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    return d >= weekAgo;
-  }
-  if (period === 'month') {
-    const monthAgo = new Date(now);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    return d >= monthAgo;
-  }
-  return true;
+  return matchesHistoryFilter(dateStr, period);
 }
 
 export function formatAppDate(dateStr?: string): string {

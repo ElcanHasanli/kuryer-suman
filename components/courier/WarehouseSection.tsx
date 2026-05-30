@@ -1,14 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DateFilterBar from '@/components/courier/DateFilterBar';
 import {
   getWarehouseSummary,
   getWarehouseUpdates,
   submitWarehouseUpdate,
 } from '@/lib/api';
-import { formatAppDateTime } from '@/lib/dates';
+import {
+  formatAppDateTime,
+  matchesHistoryFilter,
+  todayInputDate,
+  yesterdayInputDate,
+} from '@/lib/dates';
+import type { DateRange } from '@/lib/dates';
 import type {
-  WarehousePeriod,
+  DateFilterPeriod,
   WarehouseSummaryResponse,
   WarehouseUpdateRecord,
 } from '@/lib/types';
@@ -17,9 +24,7 @@ const EMPTY_FORM = {
   empty_in: '',
   full_in: '',
   full_out: '',
-  exit_full: '',
   remaining_full: '',
-  remaining_empty: '',
   notes: '',
 };
 
@@ -40,8 +45,10 @@ function formatUpdateSummary(update: WarehouseUpdateRecord): string {
 
 export default function WarehouseSection() {
   const [summary, setSummary] = useState<WarehouseSummaryResponse | null>(null);
-  const [history, setHistory] = useState<WarehouseUpdateRecord[]>([]);
-  const [historyPeriod, setHistoryPeriod] = useState<WarehousePeriod>('week');
+  const [allHistory, setAllHistory] = useState<WarehouseUpdateRecord[]>([]);
+  const [historyPeriod, setHistoryPeriod] = useState<DateFilterPeriod>('today');
+  const [customStartDate, setCustomStartDate] = useState(yesterdayInputDate());
+  const [customEndDate, setCustomEndDate] = useState(todayInputDate());
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -49,6 +56,19 @@ export default function WarehouseSection() {
   const [success, setSuccess] = useState('');
   const [mismatchWarning, setMismatchWarning] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+
+  const customRange: DateRange = {
+    startDate: customStartDate,
+    endDate: customEndDate,
+  };
+
+  const history = useMemo(
+    () =>
+      allHistory.filter((item) =>
+        matchesHistoryFilter(item.created_at, historyPeriod, customRange)
+      ),
+    [allHistory, historyPeriod, customRange.startDate, customRange.endDate]
+  );
 
   const loadSummary = useCallback(async () => {
     try {
@@ -62,15 +82,15 @@ export default function WarehouseSection() {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const data = await getWarehouseUpdates(historyPeriod);
+      const data = await getWarehouseUpdates();
       const items = Array.isArray(data) ? data : (data.updates ?? []);
-      setHistory(items);
+      setAllHistory(items);
     } catch {
-      setHistory([]);
+      setAllHistory([]);
     } finally {
       setHistoryLoading(false);
     }
-  }, [historyPeriod]);
+  }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -82,10 +102,6 @@ export default function WarehouseSection() {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
 
   const previousFull = summary?.warehouse.full_count ?? 0;
   const calculatedFull = useMemo(() => {
@@ -112,9 +128,7 @@ export default function WarehouseSection() {
         empty_in: parseCount(form.empty_in),
         full_in: parseCount(form.full_in),
         full_out: parseCount(form.full_out),
-        exit_full: parseCount(form.exit_full),
         remaining_full: remainingFull,
-        remaining_empty: parseCount(form.remaining_empty),
         notes: form.notes.trim() || undefined,
       };
 
@@ -218,23 +232,11 @@ export default function WarehouseSection() {
             placeholder="7"
           />
           <NumberField
-            label="Maşında dolu (opsional)"
-            value={form.exit_full}
-            onChange={(v) => setForm({ ...form, exit_full: v })}
-            placeholder="30"
-          />
-          <NumberField
             label="Anbarda qalan dolu *"
             value={form.remaining_full}
             onChange={(v) => setForm({ ...form, remaining_full: v })}
             placeholder="17"
             required
-          />
-          <NumberField
-            label="Anbarda qalan boş (opsional)"
-            value={form.remaining_empty}
-            onChange={(v) => setForm({ ...form, remaining_empty: v })}
-            placeholder={String(summary?.warehouse.empty_count ?? '')}
           />
           <label className="courier-form-label warehouse-form__notes">
             Qeyd
@@ -270,23 +272,15 @@ export default function WarehouseSection() {
       </form>
 
       <div className="courier-panel courier-panel--padded">
-        <div className="warehouse-history__head">
-          <h2 className="courier-section-title" style={{ margin: 0 }}>
-            Mənim qeydlərim
-          </h2>
-          <div className="courier-toolbar warehouse-history__periods">
-            {(['today', 'week', 'month'] as WarehousePeriod[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setHistoryPeriod(p)}
-                className={`courier-period-btn ${historyPeriod === p ? 'is-active' : ''}`}
-              >
-                {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
-              </button>
-            ))}
-          </div>
-        </div>
+        <h2 className="courier-section-title">Mənim qeydlərim</h2>
+        <DateFilterBar
+          period={historyPeriod}
+          onPeriodChange={setHistoryPeriod}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
+          onCustomStartChange={setCustomStartDate}
+          onCustomEndChange={setCustomEndDate}
+        />
 
         {historyLoading ? (
           <p className="courier-empty">Yüklənir...</p>
@@ -306,15 +300,11 @@ export default function WarehouseSection() {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                    {item.exit_full != null && ` · Maşında: ${item.exit_full}`}
                     {item.notes && ` · ${item.notes}`}
                   </p>
                 </div>
                 <div className="warehouse-history__counts">
                   <span>{item.remaining_full} dolu</span>
-                  {item.remaining_empty != null && (
-                    <span className="cell-muted">{item.remaining_empty} boş</span>
-                  )}
                 </div>
               </li>
             ))}

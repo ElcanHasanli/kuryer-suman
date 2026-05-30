@@ -2,18 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { createExpense, getExpenses } from '@/lib/api';
-import { formatAppDateTime, matchesAppPeriod } from '@/lib/dates';
-import type { Expense, ExpensePeriod } from '@/lib/types';
+import { formatAppDateTime, matchesHistoryFilter } from '@/lib/dates';
+import type { DateRange } from '@/lib/dates';
+import type { DateFilterPeriod, Expense } from '@/lib/types';
 import { EXPENSE_CATEGORIES, expenseCategoryLabel } from '@/lib/types';
 
 interface ExpensesSectionProps {
-  period: ExpensePeriod;
+  period: DateFilterPeriod;
+  customRange?: DateRange;
   showForm?: boolean;
   title?: string;
 }
 
 export default function ExpensesSection({
   period,
+  customRange,
   showForm = false,
   title = 'Xərclər',
 }: ExpensesSectionProps) {
@@ -27,9 +30,11 @@ export default function ExpensesSection({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getExpenses('month');
+      const data = await getExpenses();
       const all = data.expenses ?? [];
-      const filtered = all.filter((exp) => matchesAppPeriod(exp.created_at, period));
+      const filtered = all.filter((exp) =>
+        matchesHistoryFilter(exp.created_at, period, customRange)
+      );
       setExpenses(filtered);
       setTotalExpenses(filtered.reduce((sum, exp) => sum + Number(exp.amount), 0));
     } catch {
@@ -38,7 +43,7 @@ export default function ExpensesSection({
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, customRange?.startDate, customRange?.endDate]);
 
   useEffect(() => {
     load();

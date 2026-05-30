@@ -5,23 +5,34 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import CourierPushNotifications from '@/components/CourierPushNotifications';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
+import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
 import {
   downloadBlob,
-  exportCourierHistory,
+  getExpenses,
   getNotifications,
   getCompletedOrders,
   getOrders,
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/api';
-import { formatAppDate, isTodayInApp, matchesAppPeriod } from '@/lib/dates';
+import {
+  formatAppDate,
+  formatDateRangeLabel,
+  getEffectiveDateRange,
+  isTodayInApp,
+  matchesHistoryFilter,
+  todayInputDate,
+  yesterdayInputDate,
+} from '@/lib/dates';
+import type { DateRange } from '@/lib/dates';
+import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
 import { filterCourierActiveOrders } from '@/lib/courierOrders';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
-import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
+import type { DateFilterPeriod, Notification, Order } from '@/lib/types';
 
-type TabId = 'orders' | 'completed' | 'expenses' | 'warehouse' | 'history' | 'notifications';
+type TabId = 'orders' | 'expenses' | 'warehouse' | 'history' | 'notifications';
 
 const NAV_ITEMS: {
   id: TabId;
@@ -30,7 +41,6 @@ const NAV_ITEMS: {
   icon: string;
 }[] = [
   { id: 'orders', label: '📦 Aktiv sifarişlər', short: 'Sifariş', icon: '📦' },
-  { id: 'completed', label: '✅ Tamamlanan', short: 'Bitmiş', icon: '✅' },
   { id: 'expenses', label: '💰 Əlavə xərclər', short: 'Xərc', icon: '💰' },
   { id: 'warehouse', label: '💧 Su doldurma', short: 'Anbar', icon: '💧' },
   { id: 'history', label: '📈 Tarixçə', short: 'Tarix', icon: '📈' },
@@ -39,7 +49,6 @@ const NAV_ITEMS: {
 
 const PAGE_TITLES: Record<TabId, string> = {
   orders: 'Aktiv Sifarişlər',
-  completed: 'Tamamlanan Sifarişlər',
   expenses: 'Əlavə xərclər',
   warehouse: 'Su doldurma',
   history: 'Tarixçə',
@@ -79,8 +88,16 @@ export default function CourierDashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
-  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('week');
+  const [datePeriod, setDatePeriod] = useState<DateFilterPeriod>('today');
+  const [customStartDate, setCustomStartDate] = useState(yesterdayInputDate());
+  const [customEndDate, setCustomEndDate] = useState(todayInputDate());
   const [exporting, setExporting] = useState(false);
+
+  const customRange: DateRange = {
+    startDate: customStartDate,
+    endDate: customEndDate,
+  };
+  const effectiveRange = getEffectiveDateRange(datePeriod, customRange);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -148,7 +165,7 @@ export default function CourierDashboard() {
   const completedToday = completedOrders.filter((o) => isTodayInApp(o.completed_at)).length;
 
   const historyOrders = completedOrders.filter((o) =>
-    matchesAppPeriod(o.completed_at, historyPeriod)
+    matchesHistoryFilter(o.completed_at, datePeriod, customRange)
   );
 
   const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
@@ -159,8 +176,9 @@ export default function CourierDashboard() {
   };
 
   const handleLogout = () => {
+    if (!confirm('Çıxış etmək istəyirsiniz?')) return;
     logout();
-    router.push('/login');
+    router.push('/login/');
   };
 
   const handleMarkRead = async (id: number) => {
@@ -177,8 +195,18 @@ export default function CourierDashboard() {
     if (!user?.id) return;
     setExporting(true);
     try {
-      const blob = await exportCourierHistory(user.id, historyPeriod);
-      const message = await downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
+      const expenseData = await getExpenses();
+      const expenses = (expenseData.expenses ?? []).filter((exp) =>
+        matchesHistoryFilter(exp.created_at, datePeriod, customRange)
+      );
+      const blob = buildHistoryExportBlob({
+        courierName: user.name,
+        dateRange: effectiveRange,
+        orders: historyOrders,
+        expenses,
+      });
+      const filename = buildExportFilename(user.name, effectiveRange);
+      const message = await downloadBlob(blob, filename);
       alert(message);
     } catch (err) {
       console.error(err);
@@ -291,35 +319,38 @@ export default function CourierDashboard() {
           />
         )}
 
-        {activeTab === 'completed' && (
-          <OrdersList
-            orders={completedOrders}
-            loading={loading}
-            emptyText="Tamamlanan sifariş yoxdur"
-            completed
-            onOpen={(id) => setSelectedOrderId(id)}
-          />
-        )}
-
         {activeTab === 'expenses' && (
-          <ExpensesSection period="today" showForm title="Bugünkü xərclər" />
+          <div>
+            <DateFilterBar
+              period={datePeriod}
+              onPeriodChange={setDatePeriod}
+              customStartDate={customStartDate}
+              customEndDate={customEndDate}
+              onCustomStartChange={setCustomStartDate}
+              onCustomEndChange={setCustomEndDate}
+            />
+            <ExpensesSection
+              period={datePeriod}
+              customRange={customRange}
+              showForm
+              title={formatDateRangeLabel(effectiveRange)}
+            />
+          </div>
         )}
 
         {activeTab === 'warehouse' && <WarehouseSection />}
 
         {activeTab === 'history' && (
           <div>
-            <div className="courier-toolbar">
-              {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setHistoryPeriod(p)}
-                  className={`courier-period-btn ${historyPeriod === p ? 'is-active' : ''}`}
-                >
-                  {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
-                </button>
-              ))}
+            <DateFilterBar
+              period={datePeriod}
+              onPeriodChange={setDatePeriod}
+              customStartDate={customStartDate}
+              customEndDate={customEndDate}
+              onCustomStartChange={setCustomStartDate}
+              onCustomEndChange={setCustomEndDate}
+            />
+            <div className="courier-toolbar" style={{ marginBottom: '12px' }}>
               <button
                 type="button"
                 onClick={handleExport}
@@ -336,13 +367,12 @@ export default function CourierDashboard() {
               completed
             />
             <h2 className="courier-section-title courier-section-title--spaced">
-              Əlavə xərclər (tarixçə)
+              Əlavə xərclər
             </h2>
             <ExpensesSection
-              period={historyPeriod as ExpensePeriod}
-              title={
-                historyPeriod === 'today' ? 'Bu gün' : historyPeriod === 'week' ? 'Həftə' : 'Ay'
-              }
+              period={datePeriod}
+              customRange={customRange}
+              title={formatDateRangeLabel(effectiveRange)}
             />
           </div>
         )}
@@ -399,6 +429,16 @@ export default function CourierDashboard() {
           />
         )}
       </main>
+
+      <div className="courier-mobile-logout">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="courier-btn courier-btn--danger courier-btn--block"
+        >
+          🚪 Çıxış
+        </button>
+      </div>
 
       <nav className="courier-bottom-nav" aria-label="Əsas naviqasiya">
         {NAV_ITEMS.map((item) => {

@@ -381,8 +381,14 @@ export async function postOrderNote(orderId: number, body: string) {
   });
 }
 
-export async function getExpenses(period: ExpensePeriod) {
-  return api<ExpensesResponse>(`/api/expenses?period=${period}&timezone=Asia/Baku`);
+export async function getExpenses(_period?: ExpensePeriod) {
+  return api<ExpensesResponse>(`/api/expenses?period=month&timezone=Asia/Baku`);
+}
+
+export async function getWarehouseUpdates(_period: WarehousePeriod = 'today') {
+  return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
+    `/api/warehouse/updates?period=month&timezone=Asia/Baku`
+  );
 }
 
 export async function createExpense(data: {
@@ -405,10 +411,4 @@ export async function submitWarehouseUpdate(data: WarehouseUpdatePayload) {
     method: 'POST',
     body: JSON.stringify(data),
   });
-}
-
-export async function getWarehouseUpdates(period: WarehousePeriod = 'week') {
-  return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
-    `/api/warehouse/updates?period=${period}&timezone=Asia/Baku`
-  );
 }
