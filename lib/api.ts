@@ -1,8 +1,4 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
-import { Directory, Filesystem } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-import { assertValidXlsxBlob, blobFromBinaryData } from './binary';
-import { asArray } from './safeData';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
@@ -14,11 +10,6 @@ import type {
   OrderNote,
   UpdateCompletionPayload,
   User,
-  WarehousePeriod,
-  WarehouseSummaryResponse,
-  WarehouseUpdatePayload,
-  WarehouseUpdateRecord,
-  WarehouseUpdateResponse,
 } from './types';
 
 /** Production API — mobil tətbiqdə həmişə bu istifadə olunur */
@@ -103,39 +94,19 @@ async function nativeRequest(
   }
 }
 
-async function fetchBinary(path: string): Promise<Blob> {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem(STORAGE_KEYS.token)
-      : null;
-
-  let res: Response;
-  try {
-    res = await fetch(`${API}${path}`, {
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
+function blobFromNativeData(data: unknown): Blob {
+  if (data instanceof Blob) return data;
+  if (typeof data === 'string') {
+    return new Blob([data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-  } catch {
-    throw new ApiError(
-      'Şəbəkə xətası — internet və ya server əlçatan deyil',
-      0
-    );
   }
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const { message, code } = parseErrorMessage(err, `HTTP ${res.status}`);
-    throw new ApiError(message, res.status, code);
+  if (data instanceof ArrayBuffer) {
+    return new Blob([data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
   }
-
-  const blob = await res.blob();
-  return assertValidXlsxBlob(blob);
-}
-
-async function blobFromNativeData(data: unknown): Promise<Blob> {
-  const blob = blobFromBinaryData(data);
-  return assertValidXlsxBlob(blob);
+  return new Blob([JSON.stringify(data ?? '')], { type: 'application/octet-stream' });
 }
 
 async function api<T = unknown>(
@@ -175,7 +146,7 @@ async function api<T = unknown>(
     }
 
     if (status === 204) return undefined as T;
-    if (wantsBlob) return (await blobFromNativeData(data)) as T;
+    if (wantsBlob) return blobFromNativeData(data) as T;
     return data as T;
   }
 
@@ -202,7 +173,7 @@ async function api<T = unknown>(
     contentType.includes('excel') ||
     contentType.includes('vnd.openxmlformats')
   ) {
-    return (await assertValidXlsxBlob(await res.blob())) as T;
+    return res.blob() as Promise<T>;
   }
 
   if (res.status === 204) return undefined as T;
@@ -235,8 +206,7 @@ export async function getOrders(params?: { status?: Order['status'] }) {
   const query = params?.status
     ? `?${new URLSearchParams({ status: params.status }).toString()}`
     : '';
-  const data = await api<unknown>(`/api/orders${query}`);
-  return asArray<Order>(data);
+  return api<Order[]>(`/api/orders${query}`);
 }
 
 export async function getCompletedOrders() {
@@ -273,8 +243,7 @@ export async function registerPushDeviceToken(token: string, platform: string) {
 }
 
 export async function getNotifications() {
-  const data = await api<unknown>('/api/notifications');
-  return asArray<Notification>(data);
+  return api<Notification[]>('/api/notifications');
 }
 
 export async function markNotificationRead(id: number) {
@@ -291,100 +260,23 @@ export async function exportCourierHistory(
   startDate?: string,
   endDate?: string
 ) {
-  const params = new URLSearchParams({ period, timezone: 'Asia/Baku' });
+  const params = new URLSearchParams({ period });
   if (period === 'custom' && startDate && endDate) {
     params.set('startDate', startDate);
     params.set('endDate', endDate);
   }
-  const path = `/api/orders/courier/${courierId}/export?${params.toString()}`;
-
-  if (Capacitor.isNativePlatform()) {
-    try {
-      return await fetchBinary(path);
-    } catch (err) {
-      const msg = errorMessage(err);
-      if (!/şəbəkə|network|failed to fetch/i.test(msg)) {
-        throw err instanceof ApiError ? err : new ApiError(msg, 0);
-      }
-    }
-  }
-
-  return api<Blob>(path);
+  return api<Blob>(
+    `/api/orders/courier/${courierId}/export?${params.toString()}`
+  );
 }
 
-export async function downloadBlob(blob: Blob, filename: string): Promise<string> {
-  if (blob.size === 0) {
-    throw new ApiError('Excel faylı boş gəldi (0 байт).', 0);
-  }
-
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const base64 = await blobToBase64(blob);
-      const path = `exports/${Date.now()}-${filename}`;
-      const saved = await Filesystem.writeFile({
-        path,
-        data: base64,
-        directory: Directory.Cache,
-        recursive: true,
-      });
-      await Share.share({
-        title: 'Tarixçə export',
-        text: filename,
-        url: saved.uri,
-        dialogTitle: 'Excel faylını paylaş',
-      });
-      return 'Paylaşım pəncərəsi açıldı — “Fayllara saxla” və ya Drive seçin.';
-    } catch (err) {
-      const msg = errorMessage(err);
-      // iOS bəzi build-lərdə plugin hələ native-ə düşməyə bilər.
-      if (Capacitor.getPlatform() === 'ios' && /not implemented/i.test(msg)) {
-        if (typeof navigator !== 'undefined' && navigator.share) {
-          const file = new File([blob], filename, {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          });
-          await navigator.share({ title: filename, files: [file] });
-          return 'Paylaşım pəncərəsi açıldı — “Fayllara saxla” və ya Drive seçin.';
-        }
-      }
-      throw new ApiError(`Excel export alınmadı: ${msg}`, 0);
-    }
-  }
-
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-  return 'Excel faylı yükləndi.';
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const value = reader.result;
-      if (typeof value !== 'string') {
-        reject(new Error('Blob conversion failed'));
-        return;
-      }
-      const idx = value.indexOf('base64,');
-      resolve(idx >= 0 ? value.slice(idx + 7) : value);
-    };
-    reader.onerror = () => reject(reader.error ?? new Error('Blob read failed'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === 'string') return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return 'Naməlum xəta';
-  }
 }
 
 export async function getOrderNotes(orderId: number) {
@@ -398,14 +290,8 @@ export async function postOrderNote(orderId: number, body: string) {
   });
 }
 
-export async function getExpenses(_period?: ExpensePeriod) {
-  return api<ExpensesResponse>(`/api/expenses?period=month&timezone=Asia/Baku`);
-}
-
-export async function getWarehouseUpdates(_period: WarehousePeriod = 'today') {
-  return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
-    `/api/warehouse/updates?period=month&timezone=Asia/Baku`
-  );
+export async function getExpenses(period: ExpensePeriod) {
+  return api<ExpensesResponse>(`/api/expenses?period=${period}`);
 }
 
 export async function createExpense(data: {
@@ -414,17 +300,6 @@ export async function createExpense(data: {
   category: string;
 }) {
   return api<ExpensesResponse>('/api/expenses', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function getWarehouseSummary() {
-  return api<WarehouseSummaryResponse>('/api/warehouse/summary');
-}
-
-export async function submitWarehouseUpdate(data: WarehouseUpdatePayload) {
-  return api<WarehouseUpdateResponse>('/api/warehouse/update', {
     method: 'POST',
     body: JSON.stringify(data),
   });

@@ -527,19 +527,6 @@
   font-weight: 600;
 }
 
-.courier-date-range {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.courier-range-label {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: #6b7280;
-}
-
 .courier-section-title {
   font-size: 18px;
   font-weight: 600;
@@ -675,14 +662,6 @@
 }
 
 /* Bottom nav (mobile) */
-.date-filter {
-  margin-bottom: 12px;
-}
-
-.date-filter__periods {
-  margin-bottom: 8px;
-}
-
 .courier-bottom-nav {
   display: none;
   position: fixed;
@@ -969,173 +948,6 @@
 
 .expense-item__amount {
   font-weight: 700;
-  white-space: nowrap;
-}
-
-/* Warehouse */
-.warehouse-layout {
-  display: grid;
-  gap: 24px;
-  max-width: 720px;
-  width: 100%;
-}
-
-.warehouse-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-}
-
-.warehouse-summary-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  border-top: 3px solid var(--stat-color, #10b981);
-}
-
-.warehouse-summary-card__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.warehouse-summary-card__label {
-  margin: 0 0 4px;
-  font-size: 12px;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.warehouse-summary-card__value {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.warehouse-summary-card__sub {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-.warehouse-summary-card__icon {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.warehouse-meta {
-  margin: -8px 0 0;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.warehouse-form-hint {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: #6b7280;
-  line-height: 1.5;
-}
-
-.warehouse-form__grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-}
-
-.warehouse-form__notes {
-  grid-column: 1 / -1;
-}
-
-.warehouse-form__textarea {
-  resize: vertical;
-  min-height: 64px;
-  font-family: inherit;
-}
-
-.warehouse-calc-hint {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  background: #f0fdf4;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #166534;
-}
-
-.warehouse-success-box {
-  margin-top: 12px;
-  padding: 10px;
-  background: #ecfdf5;
-  border-radius: 6px;
-  color: #059669;
-  font-size: 13px;
-}
-
-.warehouse-warn-box {
-  margin-top: 8px;
-  padding: 10px;
-  background: #fffbeb;
-  border-radius: 6px;
-  color: #b45309;
-  font-size: 13px;
-}
-
-.warehouse-history__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.warehouse-history__periods {
-  margin: 0;
-  padding: 0;
-  gap: 6px;
-}
-
-.warehouse-history__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.warehouse-history__item {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid #f3f4f6;
-  align-items: flex-start;
-}
-
-.warehouse-history__item:last-child {
-  border-bottom: none;
-}
-
-.warehouse-history__summary {
-  margin: 0;
-  font-weight: 600;
-  font-size: 14px;
-  color: #1f2937;
-}
-
-.warehouse-history__meta {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.warehouse-history__counts {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  font-weight: 700;
-  font-size: 13px;
   white-space: nowrap;
 }
 

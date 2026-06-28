@@ -3,37 +3,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import CourierPushNotifications from '@/components/CourierPushNotifications';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
-import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
-import WarehouseSection from '@/components/courier/WarehouseSection';
 import {
   downloadBlob,
-  getExpenses,
+  exportCourierHistory,
   getNotifications,
   getCompletedOrders,
   getOrders,
   markAllNotificationsRead,
   markNotificationRead,
 } from '@/lib/api';
-import {
-  formatAppDate,
-  formatDateRangeLabel,
-  getEffectiveDateRange,
-  isTodayInApp,
-  matchesHistoryFilter,
-  todayInputDate,
-  yesterdayInputDate,
-} from '@/lib/dates';
-import type { DateRange } from '@/lib/dates';
-import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
-import { filterCourierActiveOrders } from '@/lib/courierOrders';
 import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
-import type { DateFilterPeriod, Notification, Order } from '@/lib/types';
+import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
-type TabId = 'orders' | 'expenses' | 'warehouse' | 'history' | 'notifications';
+type TabId = 'orders' | 'completed' | 'expenses' | 'history' | 'notifications';
 
 const NAV_ITEMS: {
   id: TabId;
@@ -42,16 +27,16 @@ const NAV_ITEMS: {
   icon: string;
 }[] = [
   { id: 'orders', label: '📦 Aktiv sifarişlər', short: 'Sifariş', icon: '📦' },
+  { id: 'completed', label: '✅ Tamamlanan', short: 'Bitmiş', icon: '✅' },
   { id: 'expenses', label: '💰 Əlavə xərclər', short: 'Xərc', icon: '💰' },
-  { id: 'warehouse', label: '💧 Su doldurma', short: 'Anbar', icon: '💧' },
   { id: 'history', label: '📈 Tarixçə', short: 'Tarix', icon: '📈' },
   { id: 'notifications', label: '🔔 Bildirişlər', short: 'Bildir', icon: '🔔' },
 ];
 
 const PAGE_TITLES: Record<TabId, string> = {
   orders: 'Aktiv Sifarişlər',
+  completed: 'Tamamlanan Sifarişlər',
   expenses: 'Əlavə xərclər',
-  warehouse: 'Su doldurma',
   history: 'Tarixçə',
   notifications: 'Bildirişlər',
 };
@@ -79,8 +64,19 @@ function paymentLabel(type?: string | null) {
   return type ? map[type] || type : '—';
 }
 
+function isToday(dateStr?: string) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
 export default function CourierDashboard() {
-  const { user, token, logout, isAuthenticated, isReady } = useAuth();
+  const { user, token, logout, isAuthenticated } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('orders');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -90,16 +86,8 @@ export default function CourierDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [orderEditMode, setOrderEditMode] = useState(false);
-  const [datePeriod, setDatePeriod] = useState<DateFilterPeriod>('today');
-  const [customStartDate, setCustomStartDate] = useState(yesterdayInputDate());
-  const [customEndDate, setCustomEndDate] = useState(todayInputDate());
+  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('week');
   const [exporting, setExporting] = useState(false);
-
-  const customRange: DateRange = {
-    startDate: customStartDate,
-    endDate: customEndDate,
-  };
-  const effectiveRange = getEffectiveDateRange(datePeriod, customRange);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -109,7 +97,7 @@ export default function CourierDashboard() {
         getCompletedOrders().catch(() => [] as Order[]),
         getNotifications().catch(() => [] as Notification[]),
       ]);
-      const active = filterCourierActiveOrders(ordersData);
+      const active = ordersData.filter((o) => o.status !== 'completed');
       const completed =
         completedData.length > 0
           ? completedData
@@ -125,17 +113,15 @@ export default function CourierDashboard() {
   }, [token]);
 
   useEffect(() => {
-    if (!isReady) return;
     if (!isAuthenticated) {
-      router.replace('/login/');
+      router.replace('/login');
       return;
     }
-    const role = (user?.role || '').toString().toLowerCase();
-    if (user && role && role !== 'courier') {
+    if (user && user.role !== 'courier') {
       logout();
-      router.replace('/login/');
+      router.replace('/login');
     }
-  }, [isAuthenticated, isReady, user, router, logout]);
+  }, [isAuthenticated, user, router, logout]);
 
   useEffect(() => {
     if (token && user?.role === 'courier') {
@@ -154,22 +140,26 @@ export default function CourierDashboard() {
     };
   }, [menuOpen]);
 
-  useEffect(() => {
-    if (selectedOrderId === null) return;
-    const inActive = activeOrders.some((o) => o.id === selectedOrderId);
-    const inCompleted = completedOrders.some((o) => o.id === selectedOrderId);
-    if (!inActive && !inCompleted) {
-      setSelectedOrderId(null);
-      setOrderEditMode(false);
-    }
-  }, [activeOrders, completedOrders, selectedOrderId]);
-
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const completedToday = completedOrders.filter((o) => isTodayInApp(o.completed_at)).length;
+  const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
 
-  const historyOrders = completedOrders.filter((o) =>
-    matchesHistoryFilter(o.completed_at, datePeriod, customRange)
-  );
+  const historyOrders = completedOrders.filter((o) => {
+    if (!o.completed_at) return false;
+    const d = new Date(o.completed_at);
+    const now = new Date();
+    if (historyPeriod === 'today') return isToday(o.completed_at);
+    if (historyPeriod === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (historyPeriod === 'month') {
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      return d >= monthAgo;
+    }
+    return true;
+  });
 
   const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
 
@@ -179,9 +169,8 @@ export default function CourierDashboard() {
   };
 
   const handleLogout = () => {
-    if (!confirm('Çıxış etmək istəyirsiniz?')) return;
     logout();
-    router.push('/login/');
+    router.push('/login');
   };
 
   const handleMarkRead = async (id: number) => {
@@ -198,19 +187,8 @@ export default function CourierDashboard() {
     if (!user?.id) return;
     setExporting(true);
     try {
-      const expenseData = await getExpenses();
-      const expenses = (expenseData.expenses ?? []).filter((exp) =>
-        matchesHistoryFilter(exp.created_at, datePeriod, customRange)
-      );
-      const blob = buildHistoryExportBlob({
-        courierName: user.name,
-        dateRange: effectiveRange,
-        orders: historyOrders,
-        expenses,
-      });
-      const filename = buildExportFilename(user.name, effectiveRange);
-      const message = await downloadBlob(blob, filename);
-      alert(message);
+      const blob = await exportCourierHistory(user.id, historyPeriod);
+      downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : 'Export uğursuz oldu');
@@ -318,45 +296,44 @@ export default function CourierDashboard() {
             loading={loading}
             emptyText="Aktiv sifariş yoxdur"
             showStatus
+            onOpen={(id) => setSelectedOrderId(id)}
+          />
+        )}
+
+        {activeTab === 'completed' && (
+          <OrdersList
+            orders={completedOrders}
+            loading={loading}
+            emptyText="Son 24 saatda tamamlanan sifariş yoxdur"
+            completed
             onOpen={(id) => {
               setOrderEditMode(false);
+              setSelectedOrderId(id);
+            }}
+            onEdit={(id) => {
+              setOrderEditMode(true);
               setSelectedOrderId(id);
             }}
           />
         )}
 
         {activeTab === 'expenses' && (
-          <div>
-            <DateFilterBar
-              period={datePeriod}
-              onPeriodChange={setDatePeriod}
-              customStartDate={customStartDate}
-              customEndDate={customEndDate}
-              onCustomStartChange={setCustomStartDate}
-              onCustomEndChange={setCustomEndDate}
-            />
-            <ExpensesSection
-              period={datePeriod}
-              customRange={customRange}
-              showForm
-              title={formatDateRangeLabel(effectiveRange)}
-            />
-          </div>
+          <ExpensesSection period="today" showForm title="Bugünkü xərclər" />
         )}
-
-        {activeTab === 'warehouse' && <WarehouseSection />}
 
         {activeTab === 'history' && (
           <div>
-            <DateFilterBar
-              period={datePeriod}
-              onPeriodChange={setDatePeriod}
-              customStartDate={customStartDate}
-              customEndDate={customEndDate}
-              onCustomStartChange={setCustomStartDate}
-              onCustomEndChange={setCustomEndDate}
-            />
-            <div className="courier-toolbar" style={{ marginBottom: '12px' }}>
+            <div className="courier-toolbar">
+              {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setHistoryPeriod(p)}
+                  className={`courier-period-btn ${historyPeriod === p ? 'is-active' : ''}`}
+                >
+                  {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={handleExport}
@@ -371,22 +348,15 @@ export default function CourierDashboard() {
               loading={loading}
               emptyText="Bu dövrdə sifariş yoxdur"
               completed
-              onOpen={(id) => {
-                setOrderEditMode(false);
-                setSelectedOrderId(id);
-              }}
-              onEdit={(id) => {
-                setOrderEditMode(true);
-                setSelectedOrderId(id);
-              }}
             />
             <h2 className="courier-section-title courier-section-title--spaced">
-              Əlavə xərclər
+              Əlavə xərclər (tarixçə)
             </h2>
             <ExpensesSection
-              period={datePeriod}
-              customRange={customRange}
-              title={formatDateRangeLabel(effectiveRange)}
+              period={historyPeriod as ExpensePeriod}
+              title={
+                historyPeriod === 'today' ? 'Bu gün' : historyPeriod === 'week' ? 'Həftə' : 'Ay'
+              }
             />
           </div>
         )}
@@ -416,7 +386,7 @@ export default function CourierDashboard() {
                   <div>
                     <p className="notif-list__message">{n.message}</p>
                     <p className="notif-list__time">
-                      {formatAppDate(n.created_at)}
+                      {new Date(n.created_at).toLocaleString('az-AZ')}
                     </p>
                   </div>
                   {!n.read && (
@@ -448,7 +418,6 @@ export default function CourierDashboard() {
         )}
       </main>
 
-
       <nav className="courier-bottom-nav" aria-label="Əsas naviqasiya">
         {NAV_ITEMS.map((item) => {
           const isActive = activeTab === item.id;
@@ -469,7 +438,6 @@ export default function CourierDashboard() {
           );
         })}
       </nav>
-      <CourierPushNotifications />
     </div>
   );
 }
@@ -543,7 +511,9 @@ function OrdersList({
                 )}
                 {completed && (
                   <td className="cell-muted">
-                    {formatAppDate(order.completed_at)}
+                    {order.completed_at
+                      ? new Date(order.completed_at).toLocaleDateString('az-AZ')
+                      : '—'}
                   </td>
                 )}
                 {completed && onEdit && (
@@ -629,7 +599,9 @@ function OrdersList({
                   <div style={{ gridColumn: '1 / -1' }}>
                     <dt>Tarix</dt>
                     <dd>
-                      {formatAppDate(order.completed_at)}
+                      {order.completed_at
+                        ? new Date(order.completed_at).toLocaleDateString('az-AZ')
+                        : '—'}
                     </dd>
                   </div>
                   {onEdit && isCourierEditable(order) && (

@@ -9,7 +9,6 @@ import {
   startOrder,
   updateOrderCompletion,
 } from '@/lib/api';
-import { formatAppDateTime } from '@/lib/dates';
 import {
   completionErrorMessage,
   formatEditTimeRemaining,
@@ -284,7 +283,7 @@ export default function OrderDetailModal({
                         {' · '}
                         {authorRoleLabel(note.author_role)}
                         {note.created_at &&
-                          ` · ${formatAppDateTime(note.created_at, {
+                          ` · ${new Date(note.created_at).toLocaleString('az-AZ', {
                             day: 'numeric',
                             month: 'short',
                             hour: '2-digit',

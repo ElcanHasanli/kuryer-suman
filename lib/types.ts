@@ -33,8 +33,6 @@ export interface Order {
   full_bidons_given?: number | null;
   completed_at?: string;
   created_at?: string;
-  updated_at?: string;
-  assigned_at?: string;
   surname?: string;
   customer_phone?: string;
   /** 24 saatlıq düzəliş pəncərəsi — yalnız kuryer */
@@ -63,11 +61,9 @@ export interface Notification {
   type?: string;
 }
 
-export type DateFilterPeriod = 'yesterday' | 'today' | 'custom';
+export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';
 
-export type HistoryPeriod = DateFilterPeriod;
-
-export type ExpensePeriod = DateFilterPeriod;
+export type ExpensePeriod = 'today' | 'week' | 'month';
 
 export interface OrderNote {
   id?: number;
@@ -112,59 +108,4 @@ export function parseOrderNotes(
 ): OrderNote[] {
   if (Array.isArray(notes)) return notes;
   return [];
-}
-
-export type WarehousePeriod = DateFilterPeriod;
-
-export interface WarehouseStock {
-  full_count: number;
-  empty_count: number;
-  updated_at?: string;
-  updated_by_name?: string;
-}
-
-export interface WarehouseCustomersSummary {
-  total_active_bidons: number;
-  customer_count: number;
-}
-
-export interface WarehouseUpdateRecord {
-  id?: number;
-  empty_in?: number;
-  full_in?: number;
-  full_out?: number;
-  exit_full?: number | null;
-  remaining_full: number;
-  remaining_empty?: number | null;
-  notes?: string | null;
-  created_at?: string;
-  courier_name?: string;
-}
-
-export interface WarehouseSummaryResponse {
-  warehouse: WarehouseStock;
-  customers: WarehouseCustomersSummary;
-  last_update?: WarehouseUpdateRecord | null;
-}
-
-export interface WarehouseUpdatePayload {
-  empty_in?: number;
-  full_in?: number;
-  full_out?: number;
-  exit_full?: number;
-  remaining_full: number;
-  remaining_empty?: number;
-  notes?: string;
-}
-
-export interface WarehouseCalculation {
-  mismatch?: boolean;
-  expected_full?: number;
-  previous_full?: number;
-}
-
-export interface WarehouseUpdateResponse {
-  stock: WarehouseStock;
-  update: WarehouseUpdateRecord;
-  calculation: WarehouseCalculation;
 }
