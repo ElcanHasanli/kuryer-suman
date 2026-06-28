@@ -887,6 +887,33 @@
   font-size: 13px;
 }
 
+.courier-edit-window {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.courier-edit-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  color: #92400e;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.orders-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* Expenses */
 .expenses-layout {
   display: grid;

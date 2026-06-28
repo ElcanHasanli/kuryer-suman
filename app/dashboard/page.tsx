@@ -29,6 +29,7 @@ import {
 import type { DateRange } from '@/lib/dates';
 import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
 import { filterCourierActiveOrders } from '@/lib/courierOrders';
+import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
 import type { DateFilterPeriod, Notification, Order } from '@/lib/types';
 
@@ -88,6 +89,7 @@ export default function CourierDashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [orderEditMode, setOrderEditMode] = useState(false);
   const [datePeriod, setDatePeriod] = useState<DateFilterPeriod>('today');
   const [customStartDate, setCustomStartDate] = useState(yesterdayInputDate());
   const [customEndDate, setCustomEndDate] = useState(todayInputDate());
@@ -153,13 +155,14 @@ export default function CourierDashboard() {
   }, [menuOpen]);
 
   useEffect(() => {
-    if (
-      selectedOrderId !== null &&
-      !activeOrders.some((o) => o.id === selectedOrderId)
-    ) {
+    if (selectedOrderId === null) return;
+    const inActive = activeOrders.some((o) => o.id === selectedOrderId);
+    const inCompleted = completedOrders.some((o) => o.id === selectedOrderId);
+    if (!inActive && !inCompleted) {
       setSelectedOrderId(null);
+      setOrderEditMode(false);
     }
-  }, [activeOrders, selectedOrderId]);
+  }, [activeOrders, completedOrders, selectedOrderId]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const completedToday = completedOrders.filter((o) => isTodayInApp(o.completed_at)).length;
@@ -297,7 +300,7 @@ export default function CourierDashboard() {
           <div className="courier-stats">
             <StatCard title="Aktiv" value={activeOrders.length} icon="📦" color="#f59e0b" />
             <StatCard title="Bugün tamamlanan" value={completedToday} icon="✅" color="#10b981" />
-            <StatCard title="Ümumi tamamlanan" value={completedOrders.length} icon="🚚" color="#3b82f6" />
+            <StatCard title="Son 24 saat" value={completedOrders.length} icon="🚚" color="#3b82f6" />
             {activeTab === 'history' && (
               <StatCard
                 title="Seçilmiş dövr gəliri"
@@ -315,7 +318,10 @@ export default function CourierDashboard() {
             loading={loading}
             emptyText="Aktiv sifariş yoxdur"
             showStatus
-            onOpen={(id) => setSelectedOrderId(id)}
+            onOpen={(id) => {
+              setOrderEditMode(false);
+              setSelectedOrderId(id);
+            }}
           />
         )}
 
@@ -365,6 +371,14 @@ export default function CourierDashboard() {
               loading={loading}
               emptyText="Bu dövrdə sifariş yoxdur"
               completed
+              onOpen={(id) => {
+                setOrderEditMode(false);
+                setSelectedOrderId(id);
+              }}
+              onEdit={(id) => {
+                setOrderEditMode(true);
+                setSelectedOrderId(id);
+              }}
             />
             <h2 className="courier-section-title courier-section-title--spaced">
               Əlavə xərclər
@@ -424,8 +438,12 @@ export default function CourierDashboard() {
         {selectedOrderId !== null && (
           <OrderDetailModal
             orderId={selectedOrderId}
-            onClose={() => setSelectedOrderId(null)}
+            onClose={() => {
+              setSelectedOrderId(null);
+              setOrderEditMode(false);
+            }}
             onUpdated={refresh}
+            initialEditMode={orderEditMode}
           />
         )}
       </main>
@@ -463,6 +481,7 @@ function OrdersList({
   showStatus,
   completed,
   onOpen,
+  onEdit,
 }: {
   orders: Order[];
   loading: boolean;
@@ -470,7 +489,15 @@ function OrdersList({
   showStatus?: boolean;
   completed?: boolean;
   onOpen?: (id: number) => void;
+  onEdit?: (id: number) => void;
 }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   if (loading) {
     return <p className="courier-empty courier-panel courier-panel--padded">Yüklənir...</p>;
   }
@@ -493,6 +520,7 @@ function OrdersList({
               {completed && <th>Ödəniş</th>}
               {completed && <th>Boş / Dolu</th>}
               {completed && <th>Tarix</th>}
+              {completed && onEdit && <th>Düzəliş</th>}
               {onOpen && <th>Əməliyyat</th>}
             </tr>
           </thead>
@@ -518,15 +546,37 @@ function OrdersList({
                     {formatAppDate(order.completed_at)}
                   </td>
                 )}
+                {completed && onEdit && (
+                  <td>
+                    {isCourierEditable(order) ? (
+                      <span className="courier-edit-badge">
+                        {formatEditTimeRemaining(order.courier_editable_until, now) ?? '—'}
+                      </span>
+                    ) : (
+                      <span className="cell-muted">—</span>
+                    )}
+                  </td>
+                )}
                 {onOpen && (
                   <td>
-                    <button
-                      type="button"
-                      onClick={() => onOpen(order.id)}
-                      className="courier-btn courier-btn--primary"
-                    >
-                      Aç
-                    </button>
+                    <div className="orders-table__actions">
+                      <button
+                        type="button"
+                        onClick={() => onOpen(order.id)}
+                        className="courier-btn courier-btn--primary"
+                      >
+                        Aç
+                      </button>
+                      {onEdit && isCourierEditable(order) && (
+                        <button
+                          type="button"
+                          onClick={() => onEdit(order.id)}
+                          className="courier-btn"
+                        >
+                          Düzəlt
+                        </button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -582,18 +632,37 @@ function OrdersList({
                       {formatAppDate(order.completed_at)}
                     </dd>
                   </div>
+                  {onEdit && isCourierEditable(order) && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <dt>Düzəlişə qalan</dt>
+                      <dd className="courier-edit-badge">
+                        {formatEditTimeRemaining(order.courier_editable_until, now) ?? '—'}
+                      </dd>
+                    </div>
+                  )}
                 </>
               )}
             </dl>
-            {onOpen && (
+            {(onOpen || onEdit) && (
               <div className="order-card__actions">
-                <button
-                  type="button"
-                  onClick={() => onOpen(order.id)}
-                  className="courier-btn courier-btn--primary courier-btn--block"
-                >
-                  Aç
-                </button>
+                {onOpen && (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(order.id)}
+                    className="courier-btn courier-btn--primary courier-btn--block"
+                  >
+                    Aç
+                  </button>
+                )}
+                {onEdit && isCourierEditable(order) && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(order.id)}
+                    className="courier-btn courier-btn--block"
+                  >
+                    ✏️ Düzəlt
+                  </button>
+                )}
               </div>
             )}
           </article>

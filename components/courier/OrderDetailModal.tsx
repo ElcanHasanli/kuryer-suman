@@ -7,8 +7,14 @@ import {
   getOrder,
   postOrderNote,
   startOrder,
+  updateOrderCompletion,
 } from '@/lib/api';
 import { formatAppDateTime } from '@/lib/dates';
+import {
+  completionErrorMessage,
+  formatEditTimeRemaining,
+  isCourierEditable,
+} from '@/lib/courierEdit';
 import { orderTotal, orderUnitPrice } from '@/lib/orderAmounts';
 import type { CompleteOrderPayload, Order, OrderNote, PaymentType } from '@/lib/types';
 import { authorRoleLabel, parseOrderNotes } from '@/lib/types';
@@ -17,25 +23,58 @@ interface OrderDetailModalProps {
   orderId: number;
   onClose: () => void;
   onUpdated: () => void;
+  initialEditMode?: boolean;
 }
 
 function customerName(order: Order) {
   return order.name || order.customer_name || '—';
 }
 
+function paymentLabel(type?: string | null) {
+  const map: Record<string, string> = {
+    cash: 'Nağd',
+    card: 'Kart',
+    credit: 'Nisyə',
+  };
+  return type ? map[type] || type : '—';
+}
+
+function fillCompletionForm(order: Order, setters: {
+  setPaymentType: (v: PaymentType) => void;
+  setAmountPaid: (v: string) => void;
+  setEmptyBidons: (v: string) => void;
+  setFullBidons: (v: string) => void;
+  setNotes: (v: string) => void;
+  setPrice: (v: string) => void;
+}) {
+  const total = orderTotal(order);
+  setters.setPaymentType((order.payment_type as PaymentType) || 'cash');
+  setters.setAmountPaid(
+    String(order.amount_paid != null && order.amount_paid !== '' ? order.amount_paid : total > 0 ? total : '')
+  );
+  setters.setEmptyBidons(String(order.empty_bidons_returned ?? 0));
+  setters.setFullBidons(String(order.full_bidons_given ?? order.bidons_count ?? 0));
+  setters.setNotes(typeof order.notes === 'string' ? order.notes : '');
+  setters.setPrice(String(order.price ?? total));
+}
+
 export default function OrderDetailModal({
   orderId,
   onClose,
   onUpdated,
+  initialEditMode = false,
 }: OrderDetailModalProps) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [now, setNow] = useState(Date.now());
 
   const [paymentType, setPaymentType] = useState<PaymentType>('cash');
   const [amountPaid, setAmountPaid] = useState('');
+  const [price, setPrice] = useState('');
   const [emptyBidons, setEmptyBidons] = useState('0');
   const [fullBidons, setFullBidons] = useState('');
   const [notes, setNotes] = useState('');
@@ -43,11 +82,29 @@ export default function OrderDetailModal({
   const [noteBody, setNoteBody] = useState('');
   const [noteSubmitting, setNoteSubmitting] = useState(false);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const refreshOrder = async () => {
     const data = await getOrder(orderId);
     setOrder(data);
     setOrderNotes(parseOrderNotes(data.notes));
     return data;
+  };
+
+  const openCompletionForm = (edit: boolean, data: Order) => {
+    fillCompletionForm(data, {
+      setPaymentType,
+      setAmountPaid,
+      setEmptyBidons,
+      setFullBidons,
+      setNotes,
+      setPrice,
+    });
+    setIsEditMode(edit);
+    setShowCompleteForm(true);
   };
 
   useEffect(() => {
@@ -58,9 +115,14 @@ export default function OrderDetailModal({
         if (!cancelled) {
           setOrder(data);
           setOrderNotes(parseOrderNotes(data.notes));
-          const total = orderTotal(data);
-          setAmountPaid(total > 0 ? String(total) : '');
-          setFullBidons(String(data.bidons_count ?? data.full_bidons_given ?? 0));
+          if (initialEditMode && isCourierEditable(data)) {
+            openCompletionForm(true, data);
+          } else {
+            const total = orderTotal(data);
+            setAmountPaid(total > 0 ? String(total) : '');
+            setFullBidons(String(data.bidons_count ?? data.full_bidons_given ?? 0));
+            setPrice(String(data.price ?? total));
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -73,7 +135,7 @@ export default function OrderDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [orderId]);
+  }, [orderId, initialEditMode]);
 
   const handleStart = async () => {
     setSubmitting(true);
@@ -117,11 +179,18 @@ export default function OrderDetailModal({
       notes: notes.trim() || undefined,
     };
     try {
-      await completeOrder(orderId, payload);
+      if (isEditMode) {
+        await updateOrderCompletion(orderId, {
+          ...payload,
+          price: parseFloat(price) || 0,
+        });
+      } else {
+        await completeOrder(orderId, payload);
+      }
       onUpdated();
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Tamamlama uğursuz oldu');
+      setError(completionErrorMessage(err, isEditMode ? 'Düzəliş uğursuz oldu' : 'Tamamlama uğursuz oldu'));
     } finally {
       setSubmitting(false);
     }
@@ -134,14 +203,27 @@ export default function OrderDetailModal({
     completed: 'Tamamlanıb',
   };
 
+  const editRemaining =
+    order && isCourierEditable(order)
+      ? formatEditTimeRemaining(order.courier_editable_until, now)
+      : null;
+
   return (
     <div className="courier-modal-overlay" onClick={onClose}>
       <div className="courier-modal" onClick={(e) => e.stopPropagation()}>
-        <h2 className="courier-modal__title">Sifariş #{orderId}</h2>
+        <h2 className="courier-modal__title">
+          {isEditMode ? `Sifarişi düzəlt #${orderId}` : `Sifariş #${orderId}`}
+        </h2>
 
         {loading && <p className="courier-empty">Yüklənir...</p>}
 
         {error && <div className="courier-error-box">{error}</div>}
+
+        {order && editRemaining && !showCompleteForm && (
+          <p className="courier-edit-window">
+            Düzəlişə qalan: <strong>{editRemaining}</strong>
+          </p>
+        )}
 
         {order && !showCompleteForm && (
           <>
@@ -157,6 +239,29 @@ export default function OrderDetailModal({
               label="Status"
               value={statusLabel[order.status] || order.status}
             />
+            {order.status === 'completed' && (
+              <>
+                <DetailRow label="Ödəniş" value={paymentLabel(order.payment_type)} />
+                <DetailRow
+                  label="Ödənilən"
+                  value={
+                    order.payment_type === 'credit'
+                      ? 'Nisyə (borc)'
+                      : `₼${Number(order.amount_paid ?? 0).toFixed(2)}`
+                  }
+                />
+                <DetailRow
+                  label="Boş / Dolu bidon"
+                  value={`${order.empty_bidons_returned ?? 0} / ${order.full_bidons_given ?? order.bidons_count}`}
+                />
+                {order.completed_at && (
+                  <DetailRow
+                    label="Tamamlanma"
+                    value={new Date(order.completed_at).toLocaleString('az-AZ')}
+                  />
+                )}
+              </>
+            )}
             {typeof order.notes === 'string' && order.notes && (
               <DetailRow label="Qeyd" value={order.notes} />
             )}
@@ -193,26 +298,30 @@ export default function OrderDetailModal({
               )}
             </div>
 
-            <textarea
-              className="courier-form-textarea"
-              placeholder="Qeyd yazın (məs. problem baş verdi)..."
-              value={noteBody}
-              onChange={(e) => setNoteBody(e.target.value)}
-              rows={2}
-              style={{ marginBottom: '8px' }}
-            />
-            <button
-              type="button"
-              onClick={handleAddNote}
-              disabled={noteSubmitting || !noteBody.trim()}
-              className="courier-btn courier-btn--primary courier-btn--block"
-              style={{
-                marginBottom: '16px',
-                opacity: noteSubmitting || !noteBody.trim() ? 0.5 : 1,
-              }}
-            >
-              {noteSubmitting ? 'Göndərilir...' : 'Qeyd əlavə et'}
-            </button>
+            {order.status !== 'completed' && (
+              <>
+                <textarea
+                  className="courier-form-textarea"
+                  placeholder="Qeyd yazın (məs. problem baş verdi)..."
+                  value={noteBody}
+                  onChange={(e) => setNoteBody(e.target.value)}
+                  rows={2}
+                  style={{ marginBottom: '8px' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddNote}
+                  disabled={noteSubmitting || !noteBody.trim()}
+                  className="courier-btn courier-btn--primary courier-btn--block"
+                  style={{
+                    marginBottom: '16px',
+                    opacity: noteSubmitting || !noteBody.trim() ? 0.5 : 1,
+                  }}
+                >
+                  {noteSubmitting ? 'Göndərilir...' : 'Qeyd əlavə et'}
+                </button>
+              </>
+            )}
 
             <div className="courier-modal-actions">
               <button type="button" onClick={onClose} className="courier-btn">
@@ -231,10 +340,19 @@ export default function OrderDetailModal({
               {order.status === 'in_progress' && (
                 <button
                   type="button"
-                  onClick={() => setShowCompleteForm(true)}
+                  onClick={() => openCompletionForm(false, order)}
                   className="courier-btn courier-btn--primary"
                 >
                   ✅ Tamamladım
+                </button>
+              )}
+              {order.status === 'completed' && isCourierEditable(order) && (
+                <button
+                  type="button"
+                  onClick={() => openCompletionForm(true, order)}
+                  className="courier-btn courier-btn--primary"
+                >
+                  ✏️ Düzəlt
                 </button>
               )}
             </div>
@@ -244,8 +362,13 @@ export default function OrderDetailModal({
         {order && showCompleteForm && (
           <form onSubmit={handleComplete}>
             <p style={{ fontSize: '14px', color: '#6b7280', marginTop: 0 }}>
-              {customerName(order)} — {order.address}
+              {isEditMode ? 'Tamamlama məlumatlarını düzəldin' : `${customerName(order)} — ${order.address}`}
             </p>
+            {isEditMode && editRemaining && (
+              <p className="courier-edit-window" style={{ marginTop: 0 }}>
+                Düzəlişə qalan: <strong>{editRemaining}</strong>
+              </p>
+            )}
 
             <label className="courier-form-label">
               Ödəniş növü
@@ -258,7 +381,8 @@ export default function OrderDetailModal({
                   if (type === 'credit') {
                     setAmountPaid('0');
                   } else if (order) {
-                    setAmountPaid(String(orderTotal(order)));
+                    const paid = parseFloat(price) || orderTotal(order);
+                    setAmountPaid(String(paid));
                   }
                 }}
               >
@@ -267,6 +391,21 @@ export default function OrderDetailModal({
                 <option value="credit">Nisyə (borc)</option>
               </select>
             </label>
+
+            {isEditMode && (
+              <label className="courier-form-label">
+                Sifariş qiyməti (₼)
+                <input
+                  className="courier-form-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  required
+                />
+              </label>
+            )}
 
             <label className="courier-form-label">
               Ödənilən məbləğ (₼)
@@ -326,7 +465,10 @@ export default function OrderDetailModal({
             <div className="courier-modal-actions">
               <button
                 type="button"
-                onClick={() => setShowCompleteForm(false)}
+                onClick={() => {
+                  setShowCompleteForm(false);
+                  setIsEditMode(false);
+                }}
                 className="courier-btn"
                 disabled={submitting}
               >
@@ -337,7 +479,7 @@ export default function OrderDetailModal({
                 disabled={submitting}
                 className="courier-btn courier-btn--primary"
               >
-                {submitting ? 'Göndərilir...' : 'Təsdiqlə'}
+                {submitting ? 'Göndərilir...' : isEditMode ? 'Yadda saxla' : 'Təsdiqlə'}
               </button>
             </div>
           </form>

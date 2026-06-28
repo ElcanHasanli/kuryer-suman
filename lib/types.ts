@@ -37,6 +37,9 @@ export interface Order {
   assigned_at?: string;
   surname?: string;
   customer_phone?: string;
+  /** 24 saatlıq düzəliş pəncərəsi — yalnız kuryer */
+  courier_editable?: boolean;
+  courier_editable_until?: string;
 }
 
 export interface CompleteOrderPayload {
@@ -45,6 +48,10 @@ export interface CompleteOrderPayload {
   empty_bidons_returned: number;
   full_bidons_given: number;
   notes?: string;
+}
+
+export interface UpdateCompletionPayload extends CompleteOrderPayload {
+  price?: number;
 }
 
 export interface Notification {

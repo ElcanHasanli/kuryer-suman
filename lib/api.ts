@@ -12,6 +12,7 @@ import type {
   Notification,
   Order,
   OrderNote,
+  UpdateCompletionPayload,
   User,
   WarehousePeriod,
   WarehouseSummaryResponse,
@@ -37,11 +38,13 @@ const API = resolveApiBase();
 
 export class ApiError extends Error {
   status?: number;
+  code?: string;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -64,12 +67,16 @@ function buildHeaders(
   return headers;
 }
 
-function parseErrorMessage(data: unknown, fallback: string): string {
-  if (data && typeof data === 'object' && 'error' in data) {
-    const msg = (data as { error?: string }).error;
-    if (msg) return msg;
+function parseErrorMessage(
+  data: unknown,
+  fallback: string
+): { message: string; code?: string } {
+  if (data && typeof data === 'object') {
+    const obj = data as { error?: string; message?: string; code?: string };
+    const message = obj.error || obj.message || fallback;
+    return { message, code: obj.code };
   }
-  return fallback;
+  return { message: fallback };
 }
 
 async function nativeRequest(
@@ -118,7 +125,8 @@ async function fetchBinary(path: string): Promise<Blob> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(parseErrorMessage(err, `HTTP ${res.status}`), res.status);
+    const { message, code } = parseErrorMessage(err, `HTTP ${res.status}`);
+    throw new ApiError(message, res.status, code);
   }
 
   const blob = await res.blob();
@@ -162,7 +170,8 @@ async function api<T = unknown>(
     );
 
     if (status >= 400) {
-      throw new ApiError(parseErrorMessage(data, `HTTP ${status}`), status);
+      const { message, code } = parseErrorMessage(data, `HTTP ${status}`);
+      throw new ApiError(message, status, code);
     }
 
     if (status === 204) return undefined as T;
@@ -182,7 +191,8 @@ async function api<T = unknown>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(parseErrorMessage(err, res.statusText), res.status);
+    const { message, code } = parseErrorMessage(err, res.statusText);
+    throw new ApiError(message, res.status, code);
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -244,6 +254,13 @@ export async function startOrder(id: number) {
 export async function completeOrder(id: number, data: CompleteOrderPayload) {
   return api<Order>(`/api/orders/${id}/complete`, {
     method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateOrderCompletion(id: number, data: UpdateCompletionPayload) {
+  return api<Order>(`/api/orders/${id}/completion`, {
+    method: 'PATCH',
     body: JSON.stringify(data),
   });
 }
