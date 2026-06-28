@@ -65,6 +65,8 @@ export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';
 
 export type DateFilterPeriod = 'yesterday' | 'today' | 'custom';
 
+export type WarehousePeriod = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+
 export type ExpensePeriod = 'today' | 'week' | 'month';
 
 export interface OrderNote {
@@ -100,7 +102,9 @@ export interface WarehouseUpdateRecord {
   empty_in?: number;
   full_in?: number;
   full_out?: number;
+  exit_full?: number;
   remaining_full: number;
+  remaining_empty?: number;
   notes?: string;
   created_at?: string;
 }
@@ -118,7 +122,9 @@ export interface WarehouseUpdatePayload {
   empty_in?: number;
   full_in?: number;
   full_out?: number;
+  exit_full?: number;
   remaining_full: number;
+  remaining_empty?: number;
   notes?: string;
 }
 

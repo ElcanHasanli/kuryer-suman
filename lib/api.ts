@@ -10,6 +10,7 @@ import type {
   OrderNote,
   UpdateCompletionPayload,
   User,
+  WarehousePeriod,
   WarehouseSummaryResponse,
   WarehouseUpdatePayload,
   WarehouseUpdateRecord,
@@ -314,14 +315,25 @@ export async function getWarehouseSummary() {
   return api<WarehouseSummaryResponse>('/api/warehouse/summary');
 }
 
-export async function getWarehouseUpdates() {
+export async function getWarehouseUpdates(params?: {
+  period?: WarehousePeriod;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const search = new URLSearchParams();
+  if (params?.period) search.set('period', params.period);
+  if (params.period === 'custom' && params.startDate && params.endDate) {
+    search.set('startDate', params.startDate);
+    search.set('endDate', params.endDate);
+  }
+  const query = search.toString() ? `?${search.toString()}` : '';
   return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
-    '/api/warehouse/updates'
+    `/api/warehouse/updates${query}`
   );
 }
 
 export async function submitWarehouseUpdate(data: WarehouseUpdatePayload) {
-  return api<WarehouseUpdateResult>('/api/warehouse/updates', {
+  return api<WarehouseUpdateResult>('/api/warehouse/update', {
     method: 'POST',
     body: JSON.stringify(data),
   });

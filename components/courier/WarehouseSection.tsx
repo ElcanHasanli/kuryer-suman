@@ -7,12 +7,7 @@ import {
   getWarehouseUpdates,
   submitWarehouseUpdate,
 } from '@/lib/api';
-import {
-  formatAppDateTime,
-  matchesHistoryFilter,
-  todayInputDate,
-  yesterdayInputDate,
-} from '@/lib/dates';
+import { formatAppDateTime, todayInputDate, yesterdayInputDate } from '@/lib/dates';
 import type { DateRange } from '@/lib/dates';
 import type {
   DateFilterPeriod,
@@ -24,7 +19,9 @@ const EMPTY_FORM = {
   empty_in: '',
   full_in: '',
   full_out: '',
+  exit_full: '',
   remaining_full: '',
+  remaining_empty: '',
   notes: '',
 };
 
@@ -39,13 +36,15 @@ function formatUpdateSummary(update: WarehouseUpdateRecord): string {
   if (update.empty_in) parts.push(`+${update.empty_in} boş`);
   if (update.full_in) parts.push(`+${update.full_in} dolu`);
   if (update.full_out) parts.push(`−${update.full_out} dolu`);
+  if (update.exit_full) parts.push(`maşın: ${update.exit_full} dolu`);
   parts.push(`→ ${update.remaining_full} dolu qaldı`);
+  if (update.remaining_empty != null) parts.push(`(${update.remaining_empty} boş)`);
   return parts.join(', ');
 }
 
 export default function WarehouseSection() {
   const [summary, setSummary] = useState<WarehouseSummaryResponse | null>(null);
-  const [allHistory, setAllHistory] = useState<WarehouseUpdateRecord[]>([]);
+  const [history, setHistory] = useState<WarehouseUpdateRecord[]>([]);
   const [historyPeriod, setHistoryPeriod] = useState<DateFilterPeriod>('today');
   const [customStartDate, setCustomStartDate] = useState(yesterdayInputDate());
   const [customEndDate, setCustomEndDate] = useState(todayInputDate());
@@ -57,17 +56,9 @@ export default function WarehouseSection() {
   const [mismatchWarning, setMismatchWarning] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
 
-  const customRange: DateRange = {
-    startDate: customStartDate,
-    endDate: customEndDate,
-  };
-
-  const history = useMemo(
-    () =>
-      allHistory.filter((item) =>
-        matchesHistoryFilter(item.created_at, historyPeriod, customRange)
-      ),
-    [allHistory, historyPeriod, customRange.startDate, customRange.endDate]
+  const customRange: DateRange = useMemo(
+    () => ({ startDate: customStartDate, endDate: customEndDate }),
+    [customStartDate, customEndDate]
   );
 
   const loadSummary = useCallback(async () => {
@@ -82,26 +73,35 @@ export default function WarehouseSection() {
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const data = await getWarehouseUpdates();
+      const params =
+        historyPeriod === 'custom'
+          ? {
+              period: 'custom' as const,
+              startDate: customRange.startDate,
+              endDate: customRange.endDate,
+            }
+          : { period: historyPeriod };
+      const data = await getWarehouseUpdates(params);
       const items = Array.isArray(data) ? data : (data.updates ?? []);
-      setAllHistory(items);
+      setHistory(items);
     } catch {
-      setAllHistory([]);
+      setHistory([]);
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
-
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    await Promise.all([loadSummary(), loadHistory()]);
-    setLoading(false);
-  }, [loadSummary, loadHistory]);
+  }, [historyPeriod, customRange.startDate, customRange.endDate]);
 
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    (async () => {
+      setLoading(true);
+      await loadSummary();
+      setLoading(false);
+    })();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   const previousFull = summary?.warehouse.full_count ?? 0;
   const calculatedFull = useMemo(() => {
@@ -128,7 +128,9 @@ export default function WarehouseSection() {
         empty_in: parseCount(form.empty_in),
         full_in: parseCount(form.full_in),
         full_out: parseCount(form.full_out),
+        exit_full: parseCount(form.exit_full),
         remaining_full: remainingFull,
+        remaining_empty: parseCount(form.remaining_empty),
         notes: form.notes.trim() || undefined,
       };
 
@@ -151,10 +153,10 @@ export default function WarehouseSection() {
       setSuccess('Anbar yeniləndi');
       if (result.calculation?.mismatch) {
         setMismatchWarning(
-          'Hesablanan dolu ilə «yerdə qaldı» uyğun gəlmir — qeyd yoxlanılsın.'
+          'Hesablanan dolu ilə «yerdə qaldı» uyğun gəlmir'
         );
       }
-      await loadHistory();
+      await Promise.all([loadSummary(), loadHistory()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Göndərmə uğursuz oldu');
     } finally {
@@ -232,11 +234,23 @@ export default function WarehouseSection() {
             placeholder="7"
           />
           <NumberField
+            label="Maşında dolu"
+            value={form.exit_full}
+            onChange={(v) => setForm({ ...form, exit_full: v })}
+            placeholder="30"
+          />
+          <NumberField
             label="Anbarda qalan dolu *"
             value={form.remaining_full}
             onChange={(v) => setForm({ ...form, remaining_full: v })}
             placeholder="17"
             required
+          />
+          <NumberField
+            label="Anbarda qalan boş"
+            value={form.remaining_empty}
+            onChange={(v) => setForm({ ...form, remaining_empty: v })}
+            placeholder="8"
           />
           <label className="courier-form-label warehouse-form__notes">
             Qeyd

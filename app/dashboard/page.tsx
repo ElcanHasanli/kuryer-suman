@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
 import ExpensesSection from '@/components/courier/ExpensesSection';
+import WarehouseSection from '@/components/courier/WarehouseSection';
 import {
   downloadBlob,
   exportCourierHistory,
@@ -18,7 +19,7 @@ import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
 import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
 
-type TabId = 'orders' | 'completed' | 'expenses' | 'history' | 'notifications';
+type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
 
 const NAV_ITEMS: {
   id: TabId;
@@ -28,6 +29,7 @@ const NAV_ITEMS: {
 }[] = [
   { id: 'orders', label: '📦 Aktiv sifarişlər', short: 'Sifariş', icon: '📦' },
   { id: 'completed', label: '✅ Tamamlanan', short: 'Bitmiş', icon: '✅' },
+  { id: 'warehouse', label: '💧 Su doldurma', short: 'Anbar', icon: '💧' },
   { id: 'expenses', label: '💰 Əlavə xərclər', short: 'Xərc', icon: '💰' },
   { id: 'history', label: '📈 Tarixçə', short: 'Tarix', icon: '📈' },
   { id: 'notifications', label: '🔔 Bildirişlər', short: 'Bildir', icon: '🔔' },
@@ -36,6 +38,7 @@ const NAV_ITEMS: {
 const PAGE_TITLES: Record<TabId, string> = {
   orders: 'Aktiv Sifarişlər',
   completed: 'Tamamlanan Sifarişlər',
+  warehouse: 'Su doldurma',
   expenses: 'Əlavə xərclər',
   history: 'Tarixçə',
   notifications: 'Bildirişlər',
@@ -274,7 +277,7 @@ export default function CourierDashboard() {
           </button>
         </header>
 
-        {activeTab !== 'notifications' && (
+        {activeTab !== 'notifications' && activeTab !== 'warehouse' && (
           <div className="courier-stats">
             <StatCard title="Aktiv" value={activeOrders.length} icon="📦" color="#f59e0b" />
             <StatCard title="Bugün tamamlanan" value={completedToday} icon="✅" color="#10b981" />
@@ -316,6 +319,8 @@ export default function CourierDashboard() {
             }}
           />
         )}
+
+        {activeTab === 'warehouse' && <WarehouseSection />}
 
         {activeTab === 'expenses' && (
           <ExpensesSection period="today" showForm title="Bugünkü xərclər" />

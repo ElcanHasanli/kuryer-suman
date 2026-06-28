@@ -893,6 +893,175 @@
   gap: 6px;
 }
 
+/* Date filter */
+.date-filter {
+  margin-bottom: 16px;
+}
+
+.date-filter__periods {
+  margin-bottom: 12px;
+}
+
+.courier-range-label {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.courier-date-range {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 480px) {
+  .courier-date-range {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Warehouse */
+.warehouse-layout {
+  display: grid;
+  gap: 24px;
+  max-width: 720px;
+  width: 100%;
+}
+
+.warehouse-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.warehouse-summary-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  border-top: 3px solid var(--stat-color, #10b981);
+}
+
+.warehouse-summary-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.warehouse-summary-card__label {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.warehouse-summary-card__value {
+  margin: 4px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.warehouse-summary-card__sub {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.warehouse-summary-card__icon {
+  font-size: 24px;
+}
+
+.warehouse-meta {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.warehouse-form-hint {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.warehouse-form__grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.warehouse-form__notes {
+  grid-column: 1 / -1;
+}
+
+.warehouse-form__textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.warehouse-calc-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #374151;
+}
+
+.warehouse-success-box {
+  margin-top: 12px;
+  padding: 10px;
+  background: #ecfdf5;
+  border-radius: 6px;
+  color: #047857;
+  font-size: 13px;
+}
+
+.warehouse-warn-box {
+  margin-top: 12px;
+  padding: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.warehouse-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.warehouse-history__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.warehouse-history__item:last-child {
+  border-bottom: none;
+}
+
+.warehouse-history__summary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.warehouse-history__meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.warehouse-history__counts {
+  font-size: 13px;
+  font-weight: 600;
+  color: #10b981;
+  white-space: nowrap;
+}
+
 /* Expenses */
 .expenses-layout {
   display: grid;
