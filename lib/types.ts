@@ -63,6 +63,8 @@ export interface Notification {
 
 export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';
 
+export type DateFilterPeriod = 'yesterday' | 'today' | 'custom';
+
 export type ExpensePeriod = 'today' | 'week' | 'month';
 
 export interface OrderNote {
@@ -84,6 +86,48 @@ export interface Expense {
 export interface ExpensesResponse {
   expenses: Expense[];
   totalExpenses: number;
+}
+
+export interface WarehouseStock {
+  full_count: number;
+  empty_count: number;
+  updated_at?: string;
+  updated_by_name?: string;
+}
+
+export interface WarehouseUpdateRecord {
+  id?: number;
+  empty_in?: number;
+  full_in?: number;
+  full_out?: number;
+  remaining_full: number;
+  notes?: string;
+  created_at?: string;
+}
+
+export interface WarehouseSummaryResponse {
+  warehouse: WarehouseStock;
+  customers: {
+    total_active_bidons: number;
+    customer_count: number;
+  };
+  last_update?: WarehouseUpdateRecord;
+}
+
+export interface WarehouseUpdatePayload {
+  empty_in?: number;
+  full_in?: number;
+  full_out?: number;
+  remaining_full: number;
+  notes?: string;
+}
+
+export interface WarehouseUpdateResult {
+  stock: WarehouseStock;
+  update: WarehouseUpdateRecord;
+  calculation?: {
+    mismatch?: boolean;
+  };
 }
 
 export const EXPENSE_CATEGORIES: { value: string; label: string }[] = [

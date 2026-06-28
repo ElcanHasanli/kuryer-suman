@@ -10,6 +10,10 @@ import type {
   OrderNote,
   UpdateCompletionPayload,
   User,
+  WarehouseSummaryResponse,
+  WarehouseUpdatePayload,
+  WarehouseUpdateRecord,
+  WarehouseUpdateResult,
 } from './types';
 
 /** Production API — mobil tətbiqdə həmişə bu istifadə olunur */
@@ -290,8 +294,9 @@ export async function postOrderNote(orderId: number, body: string) {
   });
 }
 
-export async function getExpenses(period: ExpensePeriod) {
-  return api<ExpensesResponse>(`/api/expenses?period=${period}`);
+export async function getExpenses(period?: ExpensePeriod) {
+  const query = period ? `?period=${period}` : '';
+  return api<ExpensesResponse>(`/api/expenses${query}`);
 }
 
 export async function createExpense(data: {
@@ -300,6 +305,23 @@ export async function createExpense(data: {
   category: string;
 }) {
   return api<ExpensesResponse>('/api/expenses', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getWarehouseSummary() {
+  return api<WarehouseSummaryResponse>('/api/warehouse/summary');
+}
+
+export async function getWarehouseUpdates() {
+  return api<WarehouseUpdateRecord[] | { updates: WarehouseUpdateRecord[] }>(
+    '/api/warehouse/updates'
+  );
+}
+
+export async function submitWarehouseUpdate(data: WarehouseUpdatePayload) {
+  return api<WarehouseUpdateResult>('/api/warehouse/updates', {
     method: 'POST',
     body: JSON.stringify(data),
   });
