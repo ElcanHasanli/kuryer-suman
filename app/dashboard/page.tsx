@@ -17,7 +17,7 @@ import {
 } from '@/lib/api';
 import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
 import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
-import type { ExpensePeriod, HistoryPeriod, Notification, Order } from '@/lib/types';
+import type { HistoryPeriod, Notification, Order } from '@/lib/types';
 
 type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
 
@@ -358,7 +358,7 @@ export default function CourierDashboard() {
               Əlavə xərclər (tarixçə)
             </h2>
             <ExpensesSection
-              period={historyPeriod as ExpensePeriod}
+              period={historyPeriod}
               title={
                 historyPeriod === 'today' ? 'Bu gün' : historyPeriod === 'week' ? 'Həftə' : 'Ay'
               }

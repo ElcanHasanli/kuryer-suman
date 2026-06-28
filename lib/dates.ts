@@ -1,4 +1,4 @@
-import type { DateFilterPeriod, ExpensePeriod, HistoryPeriod } from './types';
+import type { DateFilterPeriod, HistoryPeriod } from './types';
 
 export const APP_TIMEZONE = 'Asia/Baku';
 
@@ -101,6 +101,14 @@ export function getEffectiveDateRange(
     const y = yesterdayInputDate();
     return { startDate: y, endDate: y };
   }
+  if (period === 'week') {
+    return { startDate: daysAgoInputDate(7), endDate: todayInputDate() };
+  }
+  if (period === 'month') {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return { startDate: formatInputDate(getAppDateParts(d)), endDate: todayInputDate() };
+  }
   const today = todayInputDate();
   return { startDate: today, endDate: today };
 }
@@ -123,7 +131,7 @@ export function formatDateRangeLabel(range: DateRange): string {
 /** @deprecated use matchesHistoryFilter */
 export function matchesAppPeriod(
   dateStr: string | undefined,
-  period: HistoryPeriod | ExpensePeriod
+  period: HistoryPeriod | DateFilterPeriod
 ): boolean {
   return matchesHistoryFilter(dateStr, period);
 }

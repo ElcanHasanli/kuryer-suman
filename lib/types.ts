@@ -61,13 +61,19 @@ export interface Notification {
   type?: string;
 }
 
-export type HistoryPeriod = 'today' | 'week' | 'month' | 'custom';
+export type DateFilterPeriod =
+  | 'today'
+  | 'yesterday'
+  | 'week'
+  | 'month'
+  | 'custom';
 
-export type DateFilterPeriod = 'yesterday' | 'today' | 'custom';
+/** @deprecated use DateFilterPeriod */
+export type ExpensePeriod = DateFilterPeriod;
 
-export type WarehousePeriod = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+export type HistoryPeriod = Exclude<DateFilterPeriod, 'yesterday'>;
 
-export type ExpensePeriod = 'today' | 'week' | 'month';
+export type WarehousePeriod = DateFilterPeriod;
 
 export interface OrderNote {
   id?: number;
