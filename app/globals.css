@@ -4,6 +4,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --courier-primary: #0284c7;
+  --courier-primary-hover: #0369a1;
+  --courier-primary-light: #e0f2fe;
+  --courier-slate-50: #f8fafc;
+  --courier-slate-100: #f1f5f9;
+  --courier-slate-200: #e2e8f0;
+  --courier-slate-500: #64748b;
+  --courier-slate-900: #0f172a;
 }
 
 @theme inline {

@@ -322,7 +322,7 @@ export async function getWarehouseUpdates(params?: {
 }) {
   const search = new URLSearchParams();
   if (params?.period) search.set('period', params.period);
-  if (params?.period === 'custom' && params.startDate && params.endDate) {
+  if (params?.period === 'custom' && params?.startDate && params?.endDate) {
     search.set('startDate', params.startDate);
     search.set('endDate', params.endDate);
   }

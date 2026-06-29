@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
+import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
 import {
   downloadBlob,
-  exportCourierHistory,
+  getExpenses,
   getNotifications,
   getCompletedOrders,
   getOrders,
@@ -16,8 +17,17 @@ import {
   markNotificationRead,
 } from '@/lib/api';
 import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
+import {
+  getEffectiveDateRange,
+  matchesHistoryFilter,
+  todayInputDate,
+  yesterdayInputDate,
+} from '@/lib/dates';
+import type { DateRange } from '@/lib/dates';
+import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
 import { orderRevenue, orderTotal, parseAmount } from '@/lib/orderAmounts';
-import type { HistoryPeriod, Notification, Order } from '@/lib/types';
+import type { DateFilterPeriod, ExpensesResponse, Notification, Order } from '@/lib/types';
+import { getOrderStatusLabel, getPaymentTypeLabel } from '@/lib/utils';
 
 type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
 
@@ -49,22 +59,11 @@ function customerName(order: Order) {
 }
 
 function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    pending: 'Gözləyir',
-    assigned: 'Təyin edilib',
-    in_progress: 'Yoldadır',
-    completed: 'Tamamlanıb',
-  };
-  return map[status] || status;
+  return getOrderStatusLabel(status);
 }
 
 function paymentLabel(type?: string | null) {
-  const map: Record<string, string> = {
-    cash: 'Nağd',
-    card: 'Kart',
-    credit: 'Nisyə',
-  };
-  return type ? map[type] || type : '—';
+  return getPaymentTypeLabel(type);
 }
 
 function paymentSummary(order: Order) {
@@ -101,8 +100,15 @@ export default function CourierDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [orderEditMode, setOrderEditMode] = useState(false);
-  const [historyPeriod, setHistoryPeriod] = useState<HistoryPeriod>('week');
+  const [historyPeriod, setHistoryPeriod] = useState<DateFilterPeriod>('today');
+  const [historyCustomStart, setHistoryCustomStart] = useState(yesterdayInputDate());
+  const [historyCustomEnd, setHistoryCustomEnd] = useState(todayInputDate());
   const [exporting, setExporting] = useState(false);
+
+  const historyCustomRange: DateRange = {
+    startDate: historyCustomStart,
+    endDate: historyCustomEnd,
+  };
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -158,23 +164,9 @@ export default function CourierDashboard() {
   const unreadCount = notifications.filter((n) => !n.read).length;
   const completedToday = completedOrders.filter((o) => isToday(o.completed_at)).length;
 
-  const historyOrders = completedOrders.filter((o) => {
-    if (!o.completed_at) return false;
-    const d = new Date(o.completed_at);
-    const now = new Date();
-    if (historyPeriod === 'today') return isToday(o.completed_at);
-    if (historyPeriod === 'week') {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      return d >= weekAgo;
-    }
-    if (historyPeriod === 'month') {
-      const monthAgo = new Date(now);
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      return d >= monthAgo;
-    }
-    return true;
-  });
+  const historyOrders = completedOrders.filter((o) =>
+    matchesHistoryFilter(o.completed_at, historyPeriod, historyCustomRange)
+  );
 
   const historyRevenue = historyOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
 
@@ -199,11 +191,24 @@ export default function CourierDashboard() {
   };
 
   const handleExport = async () => {
-    if (!user?.id) return;
+    if (!user) return;
     setExporting(true);
     try {
-      const blob = await exportCourierHistory(user.id, historyPeriod);
-      downloadBlob(blob, `tarixce-${historyPeriod}.xlsx`);
+      const dateRange = getEffectiveDateRange(historyPeriod, historyCustomRange);
+      const expensesData = await getExpenses().catch(
+        () => ({ expenses: [], totalExpenses: 0 }) as ExpensesResponse
+      );
+      const allExpenses = expensesData.expenses ?? [];
+      const filteredExpenses = allExpenses.filter((exp) =>
+        matchesHistoryFilter(exp.created_at, historyPeriod, historyCustomRange)
+      );
+      const blob = buildHistoryExportBlob({
+        courierName: user.name,
+        dateRange,
+        orders: historyOrders,
+        expenses: filteredExpenses,
+      });
+      downloadBlob(blob, buildExportFilename(user.name, dateRange));
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : 'Export uğursuz oldu');
@@ -340,17 +345,15 @@ export default function CourierDashboard() {
 
         {activeTab === 'history' && (
           <div>
-            <div className="courier-toolbar">
-              {(['today', 'week', 'month'] as HistoryPeriod[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setHistoryPeriod(p)}
-                  className={`courier-period-btn ${historyPeriod === p ? 'is-active' : ''}`}
-                >
-                  {p === 'today' ? 'Bu gün' : p === 'week' ? 'Həftə' : 'Ay'}
-                </button>
-              ))}
+            <div className="courier-toolbar courier-toolbar--export">
+              <DateFilterBar
+                period={historyPeriod}
+                onPeriodChange={setHistoryPeriod}
+                customStartDate={historyCustomStart}
+                customEndDate={historyCustomEnd}
+                onCustomStartChange={setHistoryCustomStart}
+                onCustomEndChange={setHistoryCustomEnd}
+              />
               <button
                 type="button"
                 onClick={handleExport}
@@ -371,9 +374,8 @@ export default function CourierDashboard() {
             </h2>
             <ExpensesSection
               period={historyPeriod}
-              title={
-                historyPeriod === 'today' ? 'Bu gün' : historyPeriod === 'week' ? 'Həftə' : 'Ay'
-              }
+              customRange={historyCustomRange}
+              title="Seçilmiş dövr"
             />
           </div>
         )}

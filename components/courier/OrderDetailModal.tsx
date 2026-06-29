@@ -29,14 +29,7 @@ function customerName(order: Order) {
   return order.name || order.customer_name || '—';
 }
 
-function paymentLabel(type?: string | null) {
-  const map: Record<string, string> = {
-    cash: 'Nağd',
-    card: 'Kart',
-    credit: 'Nisyə',
-  };
-  return type ? map[type] || type : '—';
-}
+import { getPaymentTypeLabel } from '@/lib/utils';
 
 function fillCompletionForm(order: Order, setters: {
   setPaymentType: (v: PaymentType) => void;
@@ -211,8 +204,8 @@ export default function OrderDetailModal({
   const statusLabel: Record<string, string> = {
     pending: 'Gözləyir',
     assigned: 'Təyin edilib',
-    in_progress: 'Yoldadır',
-    completed: 'Tamamlanıb',
+    in_progress: 'Çatdırılır',
+    completed: 'Tamamlandı',
   };
 
   const editRemaining =
@@ -262,7 +255,7 @@ export default function OrderDetailModal({
             />
             {order.status === 'completed' && (
               <>
-                <DetailRow label="Ödəniş" value={paymentLabel(order.payment_type)} />
+                <DetailRow label="Ödəniş" value={getPaymentTypeLabel(order.payment_type)} />
                 <DetailRow
                   label="Ödənilən"
                   value={
