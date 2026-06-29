@@ -18,7 +18,12 @@ export function formatEditTimeRemaining(until?: string, now = Date.now()): strin
 export function completionErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     if (err.code === 'EDIT_WINDOW_EXPIRED') return '24 saatlıq düzəliş müddəti bitib';
-    if (err.code === 'ORDER_LOCKED') return 'Bu sifariş admin tərəfindən ödənilib — düzəliş mümkün deyil';
+    if (err.code === 'ORDER_ALREADY_PAID' || err.code === 'ORDER_LOCKED') {
+      return 'Sifariş tam ödənilib — redaktə mümkün deyil';
+    }
+    if (err.code === 'AMOUNT_EXCEEDS_ORDER') {
+      return 'Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz';
+    }
     return err.message;
   }
   if (err instanceof Error) return err.message;

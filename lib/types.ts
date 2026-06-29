@@ -29,10 +29,16 @@ export interface Order {
   amount_paid?: number | string | null;
   is_paid?: boolean;
   paid_at?: string | null;
+  /** Bu sifarişdə ödənilməmiş qalıq */
+  remaining_amount?: number | string | null;
+  /** Müştərinin ümumi borcu */
+  debt?: number | string | null;
   empty_bidons_returned?: number;
   full_bidons_given?: number | null;
   completed_at?: string;
   created_at?: string;
+  assigned_at?: string;
+  updated_at?: string;
   surname?: string;
   customer_phone?: string;
   /** 24 saatlıq düzəliş pəncərəsi — yalnız kuryer */

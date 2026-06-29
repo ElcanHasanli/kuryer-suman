@@ -16,7 +16,7 @@ import {
   markNotificationRead,
 } from '@/lib/api';
 import { formatEditTimeRemaining, isCourierEditable } from '@/lib/courierEdit';
-import { orderRevenue, orderTotal } from '@/lib/orderAmounts';
+import { orderRevenue, orderTotal, parseAmount } from '@/lib/orderAmounts';
 import type { HistoryPeriod, Notification, Order } from '@/lib/types';
 
 type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
@@ -65,6 +65,18 @@ function paymentLabel(type?: string | null) {
     credit: 'Nisyə',
   };
   return type ? map[type] || type : '—';
+}
+
+function paymentSummary(order: Order) {
+  const label = paymentLabel(order.payment_type);
+  if (order.payment_type === 'credit') return label;
+  const paid = parseAmount(order.amount_paid);
+  const total = orderTotal(order);
+  const remaining = parseAmount(order.remaining_amount);
+  if (!order.is_paid && remaining > 0) {
+    return `${label} · ₼${paid.toFixed(2)} / ₼${total.toFixed(2)}`;
+  }
+  return `${label} · ₼${paid.toFixed(2)}`;
 }
 
 function isToday(dateStr?: string) {
@@ -507,7 +519,7 @@ function OrdersList({
                   <td className="cell-strong">₼{orderTotal(order).toFixed(2)}</td>
                 )}
                 {showStatus && <td>{statusLabel(order.status)}</td>}
-                {completed && <td>{paymentLabel(order.payment_type)}</td>}
+                {completed && <td>{paymentSummary(order)}</td>}
                 {completed && (
                   <td>
                     {order.empty_bidons_returned ?? 0} /{' '}
@@ -592,7 +604,7 @@ function OrdersList({
                 <>
                   <div>
                     <dt>Ödəniş</dt>
-                    <dd>{paymentLabel(order.payment_type)}</dd>
+                    <dd>{paymentSummary(order)}</dd>
                   </div>
                   <div>
                     <dt>Boş / Dolu</dt>

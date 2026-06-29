@@ -14,7 +14,7 @@ import {
   formatEditTimeRemaining,
   isCourierEditable,
 } from '@/lib/courierEdit';
-import { orderTotal, orderUnitPrice } from '@/lib/orderAmounts';
+import { orderRemainingDue, orderTotal, orderUnitPrice, parseAmount } from '@/lib/orderAmounts';
 import type { CompleteOrderPayload, Order, OrderNote, PaymentType } from '@/lib/types';
 import { authorRoleLabel, parseOrderNotes } from '@/lib/types';
 
@@ -170,9 +170,22 @@ export default function OrderDetailModal({
     e.preventDefault();
     setSubmitting(true);
     setError('');
+
+    const orderPrice = isEditMode
+      ? parseFloat(price) || 0
+      : orderTotal(order!);
+    const paid =
+      paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
+
+    if (paymentType !== 'credit' && paid > orderPrice) {
+      setError('Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz');
+      setSubmitting(false);
+      return;
+    }
+
     const payload: CompleteOrderPayload = {
       payment_type: paymentType,
-      amount_paid: paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0,
+      amount_paid: paid,
       empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
       full_bidons_given: parseInt(fullBidons, 10) || 0,
       notes: notes.trim() || undefined,
@@ -206,6 +219,15 @@ export default function OrderDetailModal({
     order && isCourierEditable(order)
       ? formatEditTimeRemaining(order.courier_editable_until, now)
       : null;
+
+  const formOrderPrice = order
+    ? isEditMode
+      ? parseFloat(price) || 0
+      : orderTotal(order)
+    : 0;
+  const formAmountPaid =
+    paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
+  const formDebtRemaining = orderRemainingDue(formOrderPrice, formAmountPaid);
 
   return (
     <div className="courier-modal-overlay" onClick={onClose}>
@@ -246,9 +268,24 @@ export default function OrderDetailModal({
                   value={
                     order.payment_type === 'credit'
                       ? 'Nisyə (borc)'
-                      : `₼${Number(order.amount_paid ?? 0).toFixed(2)}`
+                      : `₼${parseAmount(order.amount_paid).toFixed(2)}`
                   }
                 />
+                {parseAmount(order.remaining_amount) > 0 && !order.is_paid && (
+                  <DetailRow
+                    label="Qalan borc"
+                    value={`₼${parseAmount(order.remaining_amount).toFixed(2)}`}
+                  />
+                )}
+                {order.debt != null && parseAmount(order.debt) > 0 && (
+                  <DetailRow
+                    label="Müştəri borcu"
+                    value={`₼${parseAmount(order.debt).toFixed(2)}`}
+                  />
+                )}
+                {order.is_paid && (
+                  <DetailRow label="Ödəniş statusu" value="Tam ödənilib" />
+                )}
                 <DetailRow
                   label="Boş / Dolu bidon"
                   value={`${order.empty_bidons_returned ?? 0} / ${order.full_bidons_given ?? order.bidons_count}`}
@@ -406,6 +443,12 @@ export default function OrderDetailModal({
               </label>
             )}
 
+            {!isEditMode && order && (
+              <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
+                Sifariş qiyməti: <strong>₼{orderTotal(order).toFixed(2)}</strong>
+              </p>
+            )}
+
             <label className="courier-form-label">
               Ödənilən məbləğ (₼)
               <input
@@ -413,6 +456,7 @@ export default function OrderDetailModal({
                 type="number"
                 step="0.01"
                 min="0"
+                max={paymentType === 'credit' ? undefined : formOrderPrice || undefined}
                 value={paymentType === 'credit' ? '0' : amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
                 style={
@@ -423,8 +467,15 @@ export default function OrderDetailModal({
                 disabled={paymentType === 'credit'}
                 required
               />
-              {paymentType === 'credit' && (
-                <span>Nisyədə pul ödənilmir — borc müştəriyə yazılır</span>
+              {paymentType === 'credit' && formOrderPrice > 0 && (
+                <span className="courier-debt-hint">
+                  Bütün məbləğ (₼{formOrderPrice.toFixed(2)}) müştəri borcuna yazılacaq
+                </span>
+              )}
+              {paymentType !== 'credit' && formDebtRemaining > 0 && (
+                <span className="courier-debt-hint courier-debt-hint--warn">
+                  Qalan <strong>₼{formDebtRemaining.toFixed(2)}</strong> müştəri borcuna yazılacaq
+                </span>
               )}
             </label>
 

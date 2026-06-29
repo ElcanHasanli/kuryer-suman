@@ -25,3 +25,12 @@ export function orderRevenue(order: {
   }
   return orderTotal(order);
 }
+
+export function parseAmount(value: number | string | null | undefined): number {
+  if (value == null || value === '') return 0;
+  return Number(value) || 0;
+}
+
+export function orderRemainingDue(price: number, amountPaid: number): number {
+  return Math.max(0, price - amountPaid);
+}
