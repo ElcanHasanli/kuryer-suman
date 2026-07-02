@@ -13,10 +13,12 @@ import {
   completionErrorMessage,
   formatEditTimeRemaining,
   isCourierEditable,
+  orderLoadErrorMessage,
 } from '@/lib/courierEdit';
-import { orderRemainingDue, orderTotal, orderUnitPrice, parseAmount } from '@/lib/orderAmounts';
-import type { CompleteOrderPayload, Order, OrderNote, PaymentType } from '@/lib/types';
+import { orderRemainingDue, orderTotal, orderUnitPrice, parseAmount, priceFromUnitAndBidons } from '@/lib/orderAmounts';
+import type { CompleteOrderPayload, Order, OrderNote, PaymentType, UpdateCompletionPayload } from '@/lib/types';
 import { authorRoleLabel, parseOrderNotes } from '@/lib/types';
+import { getPaymentTypeLabel } from '@/lib/utils';
 
 interface OrderDetailModalProps {
   orderId: number;
@@ -29,8 +31,6 @@ function customerName(order: Order) {
   return order.name || order.customer_name || '—';
 }
 
-import { getPaymentTypeLabel } from '@/lib/utils';
-
 function fillCompletionForm(order: Order, setters: {
   setPaymentType: (v: PaymentType) => void;
   setAmountPaid: (v: string) => void;
@@ -38,16 +38,30 @@ function fillCompletionForm(order: Order, setters: {
   setFullBidons: (v: string) => void;
   setNotes: (v: string) => void;
   setPrice: (v: string) => void;
-}) {
-  const total = orderTotal(order);
+}): boolean {
+  const unit = orderUnitPrice(order);
+  const bidons = order.full_bidons_given ?? order.bidons_count ?? 0;
+  const stored = parseAmount(order.price);
+  const calculated = priceFromUnitAndBidons(unit, bidons);
+  const priceManual = Math.abs(stored - calculated) > 0.009;
+
   setters.setPaymentType((order.payment_type as PaymentType) || 'cash');
-  setters.setAmountPaid(
-    String(order.amount_paid != null && order.amount_paid !== '' ? order.amount_paid : total > 0 ? total : '')
-  );
   setters.setEmptyBidons(String(order.empty_bidons_returned ?? 0));
-  setters.setFullBidons(String(order.full_bidons_given ?? order.bidons_count ?? 0));
+  setters.setFullBidons(String(bidons));
   setters.setNotes(typeof order.notes === 'string' ? order.notes : '');
-  setters.setPrice(String(order.price ?? total));
+  setters.setPrice(String(stored > 0 ? stored : calculated));
+  setters.setAmountPaid(
+    String(
+      order.amount_paid != null && order.amount_paid !== ''
+        ? order.amount_paid
+        : stored > 0
+          ? stored
+          : calculated > 0
+            ? calculated
+            : ''
+    )
+  );
+  return priceManual;
 }
 
 export default function OrderDetailModal({
@@ -67,6 +81,7 @@ export default function OrderDetailModal({
   const [paymentType, setPaymentType] = useState<PaymentType>('cash');
   const [amountPaid, setAmountPaid] = useState('');
   const [price, setPrice] = useState('');
+  const [priceManual, setPriceManual] = useState(false);
   const [emptyBidons, setEmptyBidons] = useState('0');
   const [fullBidons, setFullBidons] = useState('');
   const [notes, setNotes] = useState('');
@@ -87,7 +102,7 @@ export default function OrderDetailModal({
   };
 
   const openCompletionForm = (edit: boolean, data: Order) => {
-    fillCompletionForm(data, {
+    const manual = fillCompletionForm(data, {
       setPaymentType,
       setAmountPaid,
       setEmptyBidons,
@@ -95,8 +110,18 @@ export default function OrderDetailModal({
       setNotes,
       setPrice,
     });
+    setPriceManual(edit ? manual : false);
     setIsEditMode(edit);
     setShowCompleteForm(true);
+  };
+
+  const syncPriceFromBidons = (bidonCount: number, syncAmountPaid: boolean) => {
+    if (!order) return;
+    const calculated = priceFromUnitAndBidons(orderUnitPrice(order), bidonCount);
+    setPrice(String(calculated));
+    if (syncAmountPaid && paymentType !== 'credit') {
+      setAmountPaid(String(calculated));
+    }
   };
 
   useEffect(() => {
@@ -110,15 +135,17 @@ export default function OrderDetailModal({
           if (initialEditMode && isCourierEditable(data)) {
             openCompletionForm(true, data);
           } else {
-            const total = orderTotal(data);
-            setAmountPaid(total > 0 ? String(total) : '');
-            setFullBidons(String(data.bidons_count ?? data.full_bidons_given ?? 0));
-            setPrice(String(data.price ?? total));
+            const bidons = data.bidons_count ?? 0;
+            const calculated = priceFromUnitAndBidons(orderUnitPrice(data), bidons);
+            setFullBidons(String(bidons));
+            setPrice(String(calculated));
+            setAmountPaid(calculated > 0 ? String(calculated) : '');
+            setPriceManual(false);
           }
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Sifariş yüklənmədi');
+          setError(orderLoadErrorMessage(err));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -164,9 +191,13 @@ export default function OrderDetailModal({
     setSubmitting(true);
     setError('');
 
+    const bidonCount = parseInt(fullBidons, 10) || 0;
+    const unit = orderUnitPrice(order!);
     const orderPrice = isEditMode
-      ? parseFloat(price) || 0
-      : orderTotal(order!);
+      ? priceManual
+        ? parseFloat(price) || 0
+        : priceFromUnitAndBidons(unit, bidonCount)
+      : priceFromUnitAndBidons(unit, bidonCount);
     const paid =
       paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
 
@@ -180,15 +211,16 @@ export default function OrderDetailModal({
       payment_type: paymentType,
       amount_paid: paid,
       empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
-      full_bidons_given: parseInt(fullBidons, 10) || 0,
+      full_bidons_given: bidonCount,
       notes: notes.trim() || undefined,
     };
     try {
       if (isEditMode) {
-        await updateOrderCompletion(orderId, {
-          ...payload,
-          price: parseFloat(price) || 0,
-        });
+        const patch: UpdateCompletionPayload = { ...payload };
+        if (priceManual) {
+          patch.price = parseFloat(price) || 0;
+        }
+        await updateOrderCompletion(orderId, patch);
       } else {
         await completeOrder(orderId, payload);
       }
@@ -213,10 +245,12 @@ export default function OrderDetailModal({
       ? formatEditTimeRemaining(order.courier_editable_until, now)
       : null;
 
+  const unitPrice = order ? orderUnitPrice(order) : 0;
+  const bidonCount = parseInt(fullBidons, 10) || 0;
   const formOrderPrice = order
-    ? isEditMode
+    ? isEditMode && priceManual
       ? parseFloat(price) || 0
-      : orderTotal(order)
+      : priceFromUnitAndBidons(unitPrice, bidonCount)
     : 0;
   const formAmountPaid =
     paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
@@ -236,6 +270,14 @@ export default function OrderDetailModal({
         {order && editRemaining && !showCompleteForm && (
           <p className="courier-edit-window">
             Düzəlişə qalan: <strong>{editRemaining}</strong>
+          </p>
+        )}
+
+        {order && order.status === 'completed' && !isCourierEditable(order) && !showCompleteForm && (
+          <p className="courier-form-hint" style={{ marginTop: 0 }}>
+            {order.is_paid
+              ? 'Sifariş tam ödənilib — redaktə mümkün deyil'
+              : 'Düzəliş müddəti bitib'}
           </p>
         )}
 
@@ -410,8 +452,11 @@ export default function OrderDetailModal({
                   if (type === 'credit') {
                     setAmountPaid('0');
                   } else if (order) {
-                    const paid = parseFloat(price) || orderTotal(order);
-                    setAmountPaid(String(paid));
+                    const count = parseInt(fullBidons, 10) || 0;
+                    const calculated = priceFromUnitAndBidons(orderUnitPrice(order), count);
+                    const currentPrice =
+                      isEditMode && priceManual ? parseFloat(price) || calculated : calculated;
+                    setAmountPaid(String(currentPrice));
                   }
                 }}
               >
@@ -421,7 +466,19 @@ export default function OrderDetailModal({
               </select>
             </label>
 
-            {isEditMode && (
+            {order && (
+              <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
+                1 bidon = <strong>₼{unitPrice.toFixed(2)}</strong>
+                {bidonCount > 0 && (
+                  <>
+                    {' '}
+                    → {bidonCount} bidon = <strong>₼{formOrderPrice.toFixed(2)}</strong>
+                  </>
+                )}
+              </p>
+            )}
+
+            {isEditMode ? (
               <label className="courier-form-label">
                 Sifariş qiyməti (₼)
                 <input
@@ -430,15 +487,24 @@ export default function OrderDetailModal({
                   step="0.01"
                   min="0"
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => {
+                    setPrice(e.target.value);
+                    setPriceManual(true);
+                  }}
                   required
                 />
+                <span className="courier-form-hint">
+                  {priceManual
+                    ? 'Manual düzəliş — serverə göndərilir'
+                    : 'Bidon sayına görə avtomatik hesablanır'}
+                </span>
               </label>
-            )}
-
-            {!isEditMode && order && (
+            ) : (
               <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
-                Sifariş qiyməti: <strong>₼{orderTotal(order).toFixed(2)}</strong>
+                Hesablanan qiymət: <strong>₼{formOrderPrice.toFixed(2)}</strong>
+                <span style={{ display: 'block', marginTop: '4px' }}>
+                  Qiymət verilən bidon sayına görə avtomatik hesablanır
+                </span>
               </p>
             )}
 
@@ -490,7 +556,15 @@ export default function OrderDetailModal({
                 type="number"
                 min="0"
                 value={fullBidons}
-                onChange={(e) => setFullBidons(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setFullBidons(next);
+                  const count = parseInt(next, 10) || 0;
+                  if (!isEditMode || !priceManual) {
+                    syncPriceFromBidons(count, true);
+                    if (isEditMode) setPriceManual(false);
+                  }
+                }}
                 required
               />
             </label>
@@ -511,6 +585,7 @@ export default function OrderDetailModal({
                 onClick={() => {
                   setShowCompleteForm(false);
                   setIsEditMode(false);
+                  setPriceManual(false);
                 }}
                 className="courier-btn"
                 disabled={submitting}

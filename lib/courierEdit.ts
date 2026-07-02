@@ -15,14 +15,46 @@ export function formatEditTimeRemaining(until?: string, now = Date.now()): strin
   return `${minutes} dəq`;
 }
 
+export function orderLoadErrorMessage(err: unknown, fallback = 'Sifariş yüklənmədi'): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'ORDER_NOT_FOUND':
+        return 'Sifariş tapılmadı';
+      case 'ORDER_NOT_VISIBLE':
+        return 'Sifariş artıq kuryer panelində görünmür (köhnə və ya müddət bitib)';
+      case 'NOT_YOUR_ORDER':
+        return 'Bu sifariş sizə təyin olunmayıb';
+      case 'EDIT_WINDOW_EXPIRED':
+        return '24 saatlıq düzəliş müddəti bitib';
+      case 'ORDER_ALREADY_PAID':
+        return 'Sifariş tam ödənilib — redaktə mümkün deyil';
+    }
+    if (err.status === 403) {
+      return 'Bu sifarişə giriş icazəsi yoxdur';
+    }
+    if (err.status === 404) {
+      return 'Sifariş tapılmadı və ya artıq kuryer panelində görünmür';
+    }
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
 export function completionErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
-    if (err.code === 'EDIT_WINDOW_EXPIRED') return '24 saatlıq düzəliş müddəti bitib';
-    if (err.code === 'ORDER_ALREADY_PAID' || err.code === 'ORDER_LOCKED') {
-      return 'Sifariş tam ödənilib — redaktə mümkün deyil';
-    }
-    if (err.code === 'AMOUNT_EXCEEDS_ORDER') {
-      return 'Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz';
+    switch (err.code) {
+      case 'EDIT_WINDOW_EXPIRED':
+        return '24 saatlıq düzəliş müddəti bitib';
+      case 'ORDER_ALREADY_PAID':
+      case 'ORDER_LOCKED':
+        return 'Sifariş tam ödənilib — redaktə mümkün deyil';
+      case 'NOT_YOUR_ORDER':
+        return 'Bu sifariş sizə təyin olunmayıb';
+      case 'ORDER_NOT_VISIBLE':
+        return 'Sifariş artıq redaktə üçün görünmür';
+      case 'AMOUNT_EXCEEDS_ORDER':
+        return 'Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz';
     }
     return err.message;
   }

@@ -34,3 +34,9 @@ export function parseAmount(value: number | string | null | undefined): number {
 export function orderRemainingDue(price: number, amountPaid: number): number {
   return Math.max(0, price - amountPaid);
 }
+
+/** 1 bidon qiyməti × verilən dolu bidon sayı */
+export function priceFromUnitAndBidons(unitPrice: number, bidonCount: number): number {
+  if (bidonCount <= 0 || unitPrice <= 0) return 0;
+  return Math.round(unitPrice * bidonCount * 100) / 100;
+}
