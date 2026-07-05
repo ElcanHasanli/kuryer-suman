@@ -11,6 +11,7 @@ export interface User {
 
 export type OrderStatus = 'pending' | 'assigned' | 'in_progress' | 'completed';
 export type PaymentType = 'cash' | 'card' | 'credit';
+export type OrderType = 'delivery' | 'pickup';
 
 export interface Order {
   id: number;
@@ -23,6 +24,9 @@ export interface Order {
   /** Sifarişin ümumi məbləği (₼), ədəd başına deyil */
   price: number;
   status: OrderStatus;
+  order_type?: OrderType;
+  /** Planlaşdırılmış tarix (YYYY-MM-DD, Asia/Baku) */
+  scheduled_date?: string;
   /** Siyahıda mətn; detalda V2 massiv ola bilər */
   notes?: string | OrderNote[];
   payment_type?: PaymentType | null;
@@ -54,9 +58,16 @@ export interface CompleteOrderPayload {
   notes?: string;
 }
 
+export interface CompletePickupPayload {
+  empty_bidons_returned: number;
+  notes?: string;
+}
+
 export interface UpdateCompletionPayload extends CompleteOrderPayload {
   price?: number;
 }
+
+export interface UpdatePickupCompletionPayload extends CompletePickupPayload {}
 
 export interface Notification {
   id: number;

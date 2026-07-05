@@ -1,5 +1,34 @@
 import { parseAmount } from './orderAmounts';
-import type { Order } from './types';
+import type { Order, OrderType } from './types';
+
+export function isPickupOrder(order: Pick<Order, 'order_type'>): boolean {
+  return order.order_type === 'pickup';
+}
+
+export function getOrderTypeLabel(orderType?: OrderType | string | null): string {
+  switch (orderType) {
+    case 'pickup':
+      return 'Boş bidon götürmə';
+    case 'delivery':
+      return 'Su çatdırılması';
+    default:
+      return 'Su çatdırılması';
+  }
+}
+
+export function formatScheduledDate(dateStr?: string | null): string {
+  if (!dateStr) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (match) {
+    const [, y, m, d] = match;
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('az-AZ', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  return new Date(dateStr).toLocaleDateString('az-AZ');
+}
 
 export function getPaymentTypeLabel(paymentType?: string | null): string {
   switch ((paymentType || '').toLowerCase()) {

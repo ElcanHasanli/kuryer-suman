@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { STORAGE_KEYS } from './storage';
 import type {
   CompleteOrderPayload,
+  CompletePickupPayload,
   ExpensePeriod,
   ExpensesResponse,
   HistoryPeriod,
@@ -9,6 +10,7 @@ import type {
   Order,
   OrderNote,
   UpdateCompletionPayload,
+  UpdatePickupCompletionPayload,
   User,
   WarehousePeriod,
   WarehouseSummaryResponse,
@@ -226,14 +228,17 @@ export async function startOrder(id: number) {
   return api<Order>(`/api/orders/${id}/start`, { method: 'PUT' });
 }
 
-export async function completeOrder(id: number, data: CompleteOrderPayload) {
+export async function completeOrder(id: number, data: CompleteOrderPayload | CompletePickupPayload) {
   return api<Order>(`/api/orders/${id}/complete`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
-export async function updateOrderCompletion(id: number, data: UpdateCompletionPayload) {
+export async function updateOrderCompletion(
+  id: number,
+  data: UpdateCompletionPayload | UpdatePickupCompletionPayload
+) {
   return api<Order>(`/api/orders/${id}/completion`, {
     method: 'PATCH',
     body: JSON.stringify(data),

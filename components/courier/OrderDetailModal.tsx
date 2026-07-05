@@ -16,9 +16,22 @@ import {
   orderLoadErrorMessage,
 } from '@/lib/courierEdit';
 import { orderRemainingDue, orderTotal, orderUnitPrice, parseAmount, priceFromUnitAndBidons } from '@/lib/orderAmounts';
-import type { CompleteOrderPayload, Order, OrderNote, PaymentType, UpdateCompletionPayload } from '@/lib/types';
+import type {
+  CompleteOrderPayload,
+  CompletePickupPayload,
+  Order,
+  OrderNote,
+  PaymentType,
+  UpdateCompletionPayload,
+  UpdatePickupCompletionPayload,
+} from '@/lib/types';
 import { authorRoleLabel, parseOrderNotes } from '@/lib/types';
-import { getPaymentTypeLabel } from '@/lib/utils';
+import {
+  formatScheduledDate,
+  getOrderTypeLabel,
+  getPaymentTypeLabel,
+  isPickupOrder,
+} from '@/lib/utils';
 
 interface OrderDetailModalProps {
   orderId: number;
@@ -64,6 +77,16 @@ function fillCompletionForm(order: Order, setters: {
   return priceManual;
 }
 
+function fillPickupForm(order: Order, setters: {
+  setEmptyBidons: (v: string) => void;
+  setNotes: (v: string) => void;
+}) {
+  setters.setEmptyBidons(
+    String(order.empty_bidons_returned ?? order.bidons_count ?? 0)
+  );
+  setters.setNotes(typeof order.notes === 'string' ? order.notes : '');
+}
+
 export default function OrderDetailModal({
   orderId,
   onClose,
@@ -102,15 +125,20 @@ export default function OrderDetailModal({
   };
 
   const openCompletionForm = (edit: boolean, data: Order) => {
-    const manual = fillCompletionForm(data, {
-      setPaymentType,
-      setAmountPaid,
-      setEmptyBidons,
-      setFullBidons,
-      setNotes,
-      setPrice,
-    });
-    setPriceManual(edit ? manual : false);
+    if (isPickupOrder(data)) {
+      fillPickupForm(data, { setEmptyBidons, setNotes });
+      setPriceManual(false);
+    } else {
+      const manual = fillCompletionForm(data, {
+        setPaymentType,
+        setAmountPaid,
+        setEmptyBidons,
+        setFullBidons,
+        setNotes,
+        setPrice,
+      });
+      setPriceManual(edit ? manual : false);
+    }
     setIsEditMode(edit);
     setShowCompleteForm(true);
   };
@@ -134,6 +162,8 @@ export default function OrderDetailModal({
           setOrderNotes(parseOrderNotes(data.notes));
           if (initialEditMode && isCourierEditable(data)) {
             openCompletionForm(true, data);
+          } else if (isPickupOrder(data)) {
+            fillPickupForm(data, { setEmptyBidons, setNotes });
           } else {
             const bidons = data.bidons_count ?? 0;
             const calculated = priceFromUnitAndBidons(orderUnitPrice(data), bidons);
@@ -191,38 +221,50 @@ export default function OrderDetailModal({
     setSubmitting(true);
     setError('');
 
-    const bidonCount = parseInt(fullBidons, 10) || 0;
-    const unit = orderUnitPrice(order!);
-    const orderPrice = isEditMode
-      ? priceManual
-        ? parseFloat(price) || 0
-        : priceFromUnitAndBidons(unit, bidonCount)
-      : priceFromUnitAndBidons(unit, bidonCount);
-    const paid =
-      paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
-
-    if (paymentType !== 'credit' && paid > orderPrice) {
-      setError('Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz');
-      setSubmitting(false);
-      return;
-    }
-
-    const payload: CompleteOrderPayload = {
-      payment_type: paymentType,
-      amount_paid: paid,
-      empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
-      full_bidons_given: bidonCount,
-      notes: notes.trim() || undefined,
-    };
     try {
-      if (isEditMode) {
-        const patch: UpdateCompletionPayload = { ...payload };
-        if (priceManual) {
-          patch.price = parseFloat(price) || 0;
+      if (order && isPickupOrder(order)) {
+        const payload: CompletePickupPayload = {
+          empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
+          notes: notes.trim() || undefined,
+        };
+        if (isEditMode) {
+          await updateOrderCompletion(orderId, payload as UpdatePickupCompletionPayload);
+        } else {
+          await completeOrder(orderId, payload);
         }
-        await updateOrderCompletion(orderId, patch);
       } else {
-        await completeOrder(orderId, payload);
+        const bidonCount = parseInt(fullBidons, 10) || 0;
+        const unit = orderUnitPrice(order!);
+        const orderPrice = isEditMode
+          ? priceManual
+            ? parseFloat(price) || 0
+            : priceFromUnitAndBidons(unit, bidonCount)
+          : priceFromUnitAndBidons(unit, bidonCount);
+        const paid =
+          paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
+
+        if (paymentType !== 'credit' && paid > orderPrice) {
+          setError('Ödənilən məbləğ sifariş qiymətindən böyük ola bilməz');
+          setSubmitting(false);
+          return;
+        }
+
+        const payload: CompleteOrderPayload = {
+          payment_type: paymentType,
+          amount_paid: paid,
+          empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
+          full_bidons_given: bidonCount,
+          notes: notes.trim() || undefined,
+        };
+        if (isEditMode) {
+          const patch: UpdateCompletionPayload = { ...payload };
+          if (priceManual) {
+            patch.price = parseFloat(price) || 0;
+          }
+          await updateOrderCompletion(orderId, patch);
+        } else {
+          await completeOrder(orderId, payload);
+        }
       }
       onUpdated();
       onClose();
@@ -255,12 +297,19 @@ export default function OrderDetailModal({
   const formAmountPaid =
     paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
   const formDebtRemaining = orderRemainingDue(formOrderPrice, formAmountPaid);
+  const isPickup = order ? isPickupOrder(order) : false;
 
   return (
     <div className="courier-modal-overlay" onClick={onClose}>
       <div className="courier-modal" onClick={(e) => e.stopPropagation()}>
         <h2 className="courier-modal__title">
-          {isEditMode ? `Sifarişi düzəlt #${orderId}` : `Sifariş #${orderId}`}
+          {isPickup
+            ? isEditMode
+              ? `Boş bidon düzəlt #${orderId}`
+              : `Boş bidon götürmə #${orderId}`
+            : isEditMode
+              ? `Sifarişi düzəlt #${orderId}`
+              : `Sifariş #${orderId}`}
         </h2>
 
         {loading && <p className="courier-empty">Yüklənir...</p>}
@@ -275,7 +324,7 @@ export default function OrderDetailModal({
 
         {order && order.status === 'completed' && !isCourierEditable(order) && !showCompleteForm && (
           <p className="courier-form-hint" style={{ marginTop: 0 }}>
-            {order.is_paid
+            {!isPickup && order.is_paid
               ? 'Sifariş tam ödənilib — redaktə mümkün deyil'
               : 'Düzəliş müddəti bitib'}
           </p>
@@ -285,17 +334,52 @@ export default function OrderDetailModal({
           <>
             <DetailRow label="Müştəri" value={customerName(order)} />
             <DetailRow label="Ünvan" value={order.address} />
-            <DetailRow label="Bidon" value={String(order.bidons_count)} />
             <DetailRow
-              label="Ədəd qiyməti"
-              value={`₼${orderUnitPrice(order).toFixed(2)}`}
+              label="Növ"
+              value={getOrderTypeLabel(order.order_type)}
             />
-            <DetailRow label="Cəmi" value={`₼${orderTotal(order).toFixed(2)}`} />
+            {order.scheduled_date && (
+              <DetailRow
+                label="Planlaşdırılan tarix"
+                value={formatScheduledDate(order.scheduled_date)}
+              />
+            )}
+            {isPickup ? (
+              <>
+                <DetailRow
+                  label="Gözlənilən boş bidon"
+                  value={String(order.bidons_count)}
+                />
+              </>
+            ) : (
+              <>
+                <DetailRow label="Bidon" value={String(order.bidons_count)} />
+                <DetailRow
+                  label="Ədəd qiyməti"
+                  value={`₼${orderUnitPrice(order).toFixed(2)}`}
+                />
+                <DetailRow label="Cəmi" value={`₼${orderTotal(order).toFixed(2)}`} />
+              </>
+            )}
             <DetailRow
               label="Status"
               value={statusLabel[order.status] || order.status}
             />
-            {order.status === 'completed' && (
+            {order.status === 'completed' && isPickup && (
+              <>
+                <DetailRow
+                  label="Götürülən boş bidon"
+                  value={String(order.empty_bidons_returned ?? 0)}
+                />
+                {order.completed_at && (
+                  <DetailRow
+                    label="Tamamlanma"
+                    value={new Date(order.completed_at).toLocaleString('az-AZ')}
+                  />
+                )}
+              </>
+            )}
+            {order.status === 'completed' && !isPickup && (
               <>
                 <DetailRow label="Ödəniş" value={getPaymentTypeLabel(order.payment_type)} />
                 <DetailRow
@@ -414,7 +498,7 @@ export default function OrderDetailModal({
                   onClick={() => openCompletionForm(false, order)}
                   className="courier-btn courier-btn--primary"
                 >
-                  ✅ Tamamladım
+                  {isPickup ? '📦 Götürdüm' : '✅ Tamamladım'}
                 </button>
               )}
               {order.status === 'completed' && isCourierEditable(order) && (
@@ -433,7 +517,11 @@ export default function OrderDetailModal({
         {order && showCompleteForm && (
           <form onSubmit={handleComplete}>
             <p style={{ fontSize: '14px', color: '#6b7280', marginTop: 0 }}>
-              {isEditMode ? 'Tamamlama məlumatlarını düzəldin' : `${customerName(order)} — ${order.address}`}
+              {isEditMode
+                ? isPickup
+                  ? 'Götürülən boş bidon məlumatını düzəldin'
+                  : 'Tamamlama məlumatlarını düzəldin'
+                : `${customerName(order)} — ${order.address}`}
             </p>
             {isEditMode && editRemaining && (
               <p className="courier-edit-window" style={{ marginTop: 0 }}>
@@ -441,6 +529,32 @@ export default function OrderDetailModal({
               </p>
             )}
 
+            {isPickup ? (
+              <>
+                <label className="courier-form-label">
+                  Götürülən boş bidon
+                  <input
+                    className="courier-form-input"
+                    type="number"
+                    min="0"
+                    value={emptyBidons}
+                    onChange={(e) => setEmptyBidons(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label className="courier-form-label">
+                  Qeyd
+                  <textarea
+                    className="courier-form-textarea"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="İstəyə bağlı"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
             <label className="courier-form-label">
               Ödəniş növü
               <select
@@ -578,6 +692,8 @@ export default function OrderDetailModal({
                 placeholder="İstəyə bağlı"
               />
             </label>
+              </>
+            )}
 
             <div className="courier-modal-actions">
               <button

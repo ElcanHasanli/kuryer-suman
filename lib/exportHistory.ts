@@ -7,6 +7,7 @@ import { expenseCategoryLabel, parseOrderNotes } from './types';
 import {
   formatPaidForExcel,
   getOrderStatusLabel,
+  getOrderTypeLabel,
   getPaymentTypeLabel,
 } from './utils';
 
@@ -108,6 +109,7 @@ export function buildHistoryExportBlob(options: {
       'Tarix',
       'Müştəri',
       'Ünvan',
+      'Növ',
       'Status',
       'Qiymət (₼)',
       'Ödənilən (₼)',
@@ -124,6 +126,7 @@ export function buildHistoryExportBlob(options: {
       formatExportDateTime(order.completed_at),
       customerName(order),
       order.address || '—',
+      getOrderTypeLabel(order.order_type),
       getOrderStatusLabel(order.status),
       round2(orderTotal(order)),
       round2(parseAmount(order.amount_paid)),
@@ -136,7 +139,7 @@ export function buildHistoryExportBlob(options: {
   }
 
   if (sortedOrders.length === 0) {
-    orderRows.push(['—', 'Sifariş yoxdur', '—', '—', 0, 0, '—', '—', '—', 0, 0]);
+    orderRows.push(['—', 'Sifariş yoxdur', '—', '—', '—', 0, 0, '—', '—', '—', 0, 0]);
   }
 
   const ordersSheet = XLSX.utils.aoa_to_sheet(orderRows);
@@ -144,6 +147,7 @@ export function buildHistoryExportBlob(options: {
     { wch: 18 },
     { wch: 22 },
     { wch: 30 },
+    { wch: 18 },
     { wch: 14 },
     { wch: 12 },
     { wch: 12 },

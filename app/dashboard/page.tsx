@@ -27,7 +27,7 @@ import type { DateRange } from '@/lib/dates';
 import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
 import { orderRevenue, orderTotal, parseAmount } from '@/lib/orderAmounts';
 import type { DateFilterPeriod, ExpensesResponse, Notification, Order } from '@/lib/types';
-import { getOrderStatusLabel, getPaymentTypeLabel } from '@/lib/utils';
+import { getOrderStatusLabel, getOrderTypeLabel, getPaymentTypeLabel, isPickupOrder } from '@/lib/utils';
 
 type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
 
@@ -67,6 +67,7 @@ function paymentLabel(type?: string | null) {
 }
 
 function paymentSummary(order: Order) {
+  if (isPickupOrder(order)) return getOrderTypeLabel('pickup');
   const label = paymentLabel(order.payment_type);
   if (order.payment_type === 'credit') return label;
   const paid = parseAmount(order.amount_paid);
@@ -76,6 +77,15 @@ function paymentSummary(order: Order) {
     return `${label} · ₼${paid.toFixed(2)} / ₼${total.toFixed(2)}`;
   }
   return `${label} · ₼${paid.toFixed(2)}`;
+}
+
+function OrderTypeBadge({ order }: { order: Order }) {
+  const pickup = isPickupOrder(order);
+  return (
+    <span className={`order-type-badge order-type-badge--${pickup ? 'pickup' : 'delivery'}`}>
+      {pickup ? '📦 Boş bidon' : '💧 Çatdırılma'}
+    </span>
+  );
 }
 
 function isToday(dateStr?: string) {
@@ -501,6 +511,7 @@ function OrdersList({
             <tr>
               <th>Müştəri</th>
               <th>Ünvan</th>
+              {!completed && <th>Növ</th>}
               {!completed && <th>Bidon</th>}
               {!completed && <th>Cəmi (₼)</th>}
               {showStatus && <th>Status</th>}
@@ -514,18 +525,28 @@ function OrdersList({
           <tbody>
             {orders.map((order) => (
               <tr key={order.id}>
-                <td className="cell-strong">{customerName(order)}</td>
+                <td className="cell-strong">
+                  {customerName(order)}
+                </td>
                 <td className="cell-muted">{order.address}</td>
+                {!completed && (
+                  <td>
+                    <OrderTypeBadge order={order} />
+                  </td>
+                )}
                 {!completed && <td>{order.bidons_count}</td>}
                 {!completed && (
-                  <td className="cell-strong">₼{orderTotal(order).toFixed(2)}</td>
+                  <td className="cell-strong">
+                    {isPickupOrder(order) ? '—' : `₼${orderTotal(order).toFixed(2)}`}
+                  </td>
                 )}
                 {showStatus && <td>{statusLabel(order.status)}</td>}
                 {completed && <td>{paymentSummary(order)}</td>}
                 {completed && (
                   <td>
-                    {order.empty_bidons_returned ?? 0} /{' '}
-                    {order.full_bidons_given ?? order.bidons_count}
+                    {isPickupOrder(order)
+                      ? `${order.empty_bidons_returned ?? 0} boş`
+                      : `${order.empty_bidons_returned ?? 0} / ${order.full_bidons_given ?? order.bidons_count}`}
                   </td>
                 )}
                 {completed && (
@@ -579,11 +600,14 @@ function OrdersList({
           <article key={order.id} className="order-card">
             <div className="order-card__head">
               <h3 className="order-card__name">{customerName(order)}</h3>
-              {showStatus && (
-                <span className="courier-btn" style={{ fontSize: '11px', padding: '4px 8px' }}>
-                  {statusLabel(order.status)}
-                </span>
-              )}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <OrderTypeBadge order={order} />
+                {showStatus && (
+                  <span className="courier-btn" style={{ fontSize: '11px', padding: '4px 8px' }}>
+                    {statusLabel(order.status)}
+                  </span>
+                )}
+              </div>
             </div>
             <dl className="order-card__meta">
               <div>
@@ -596,10 +620,12 @@ function OrdersList({
                     <dt>Bidon</dt>
                     <dd>{order.bidons_count}</dd>
                   </div>
-                  <div>
-                    <dt>Cəmi</dt>
-                    <dd>₼{orderTotal(order).toFixed(2)}</dd>
-                  </div>
+                  {!isPickupOrder(order) && (
+                    <div>
+                      <dt>Cəmi</dt>
+                      <dd>₼{orderTotal(order).toFixed(2)}</dd>
+                    </div>
+                  )}
                 </>
               )}
               {completed && (
@@ -609,10 +635,11 @@ function OrdersList({
                     <dd>{paymentSummary(order)}</dd>
                   </div>
                   <div>
-                    <dt>Boş / Dolu</dt>
+                    <dt>{isPickupOrder(order) ? 'Götürülən boş' : 'Boş / Dolu'}</dt>
                     <dd>
-                      {order.empty_bidons_returned ?? 0} /{' '}
-                      {order.full_bidons_given ?? order.bidons_count}
+                      {isPickupOrder(order)
+                        ? `${order.empty_bidons_returned ?? 0} boş`
+                        : `${order.empty_bidons_returned ?? 0} / ${order.full_bidons_given ?? order.bidons_count}`}
                     </dd>
                   </div>
                   <div style={{ gridColumn: '1 / -1' }}>
