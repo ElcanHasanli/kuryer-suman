@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
+import { CustomerPhone } from '@/components/courier/CustomerPhone';
 import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
@@ -27,7 +28,7 @@ import type { DateRange } from '@/lib/dates';
 import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
 import { orderRevenue, orderTotal, parseAmount } from '@/lib/orderAmounts';
 import type { DateFilterPeriod, ExpensesResponse, Notification, Order } from '@/lib/types';
-import { getOrderStatusLabel, getOrderTypeLabel, getPaymentTypeLabel, isPickupOrder } from '@/lib/utils';
+import { getOrderStatusLabel, getOrderTypeLabel, getPaymentTypeLabel, isPickupOrder, customerDisplayName, customerOrderAddress } from '@/lib/utils';
 
 type TabId = 'orders' | 'completed' | 'warehouse' | 'expenses' | 'history' | 'notifications';
 
@@ -53,10 +54,6 @@ const PAGE_TITLES: Record<TabId, string> = {
   history: 'Tarixçə',
   notifications: 'Bildirişlər',
 };
-
-function customerName(order: Order) {
-  return order.name || order.customer_name || '—';
-}
 
 function statusLabel(status: string) {
   return getOrderStatusLabel(status);
@@ -510,6 +507,7 @@ function OrdersList({
           <thead>
             <tr>
               <th>Müştəri</th>
+              <th>Telefon</th>
               <th>Ünvan</th>
               {!completed && <th>Növ</th>}
               {!completed && <th>Bidon</th>}
@@ -526,9 +524,12 @@ function OrdersList({
             {orders.map((order) => (
               <tr key={order.id}>
                 <td className="cell-strong">
-                  {customerName(order)}
+                  {customerDisplayName(order)}
                 </td>
-                <td className="cell-muted">{order.address}</td>
+                <td>
+                  <CustomerPhone order={order} showSecondary={false} />
+                </td>
+                <td className="cell-muted">{customerOrderAddress(order)}</td>
                 {!completed && (
                   <td>
                     <OrderTypeBadge order={order} />
@@ -599,7 +600,7 @@ function OrdersList({
         {orders.map((order) => (
           <article key={order.id} className="order-card">
             <div className="order-card__head">
-              <h3 className="order-card__name">{customerName(order)}</h3>
+              <h3 className="order-card__name">{customerDisplayName(order)}</h3>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <OrderTypeBadge order={order} />
                 {showStatus && (
@@ -610,9 +611,17 @@ function OrdersList({
               </div>
             </div>
             <dl className="order-card__meta">
+              {order.customer_phone && (
+                <div>
+                  <dt>Telefon</dt>
+                  <dd>
+                    <CustomerPhone order={order} showSecondary={false} />
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Ünvan</dt>
-                <dd>{order.address}</dd>
+                <dd>{customerOrderAddress(order)}</dd>
               </div>
               {!completed && (
                 <>

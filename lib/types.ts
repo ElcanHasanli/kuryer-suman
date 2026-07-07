@@ -45,6 +45,11 @@ export interface Order {
   updated_at?: string;
   surname?: string;
   customer_phone?: string;
+  customer_phone2?: string;
+  customer_display_name?: string;
+  customer_address?: string;
+  whatsapp_url?: string;
+  whatsapp_url_phone2?: string;
   /** 24 saatlıq düzəliş pəncərəsi — yalnız kuryer */
   courier_editable?: boolean;
   courier_editable_until?: string;

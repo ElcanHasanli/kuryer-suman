@@ -73,3 +73,19 @@ export function getOrderStatusLabel(status?: string): string {
 export function formatMoneyAz(amount: number): string {
   return `₼${amount.toFixed(2)}`;
 }
+
+export function customerDisplayName(
+  order: Pick<Order, 'customer_display_name' | 'name' | 'customer_name' | 'surname'>
+): string {
+  if (order.customer_display_name?.trim()) return order.customer_display_name.trim();
+  const name = order.name || order.customer_name || '';
+  const surname = order.surname ? ` ${order.surname}` : '';
+  const full = `${name}${surname}`.trim();
+  return full || '—';
+}
+
+export function customerOrderAddress(
+  order: Pick<Order, 'customer_address' | 'address'>
+): string {
+  return order.customer_address?.trim() || order.address || '—';
+}

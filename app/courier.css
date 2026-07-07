@@ -796,6 +796,30 @@
   font-weight: 500;
 }
 
+.courier-phone-link {
+  color: var(--courier-primary, #2563eb);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.courier-phone-link:hover {
+  text-decoration: underline;
+}
+
+.courier-phone-inline {
+  display: inline;
+}
+
+.courier-phone-sep {
+  color: #9ca3af;
+}
+
+.courier-phone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .courier-form-label {
   display: block;
   font-size: 12px;

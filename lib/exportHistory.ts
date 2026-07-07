@@ -9,6 +9,8 @@ import {
   getOrderStatusLabel,
   getOrderTypeLabel,
   getPaymentTypeLabel,
+  customerDisplayName,
+  customerOrderAddress,
 } from './utils';
 
 function round2(n: number): number {
@@ -16,9 +18,7 @@ function round2(n: number): number {
 }
 
 function customerName(order: Order): string {
-  const name = order.name || order.customer_name || '—';
-  const surname = order.surname ? ` ${order.surname}` : '';
-  return `${name}${surname}`.trim();
+  return customerDisplayName(order);
 }
 
 function orderNotesText(order: Order): string {
@@ -108,6 +108,7 @@ export function buildHistoryExportBlob(options: {
     [
       'Tarix',
       'Müştəri',
+      'Telefon',
       'Ünvan',
       'Növ',
       'Status',
@@ -125,7 +126,8 @@ export function buildHistoryExportBlob(options: {
     orderRows.push([
       formatExportDateTime(order.completed_at),
       customerName(order),
-      order.address || '—',
+      order.customer_phone || '—',
+      customerOrderAddress(order),
       getOrderTypeLabel(order.order_type),
       getOrderStatusLabel(order.status),
       round2(orderTotal(order)),
@@ -139,13 +141,14 @@ export function buildHistoryExportBlob(options: {
   }
 
   if (sortedOrders.length === 0) {
-    orderRows.push(['—', 'Sifariş yoxdur', '—', '—', '—', 0, 0, '—', '—', '—', 0, 0]);
+    orderRows.push(['—', 'Sifariş yoxdur', '—', '—', '—', '—', 0, 0, '—', '—', '—', 0, 0]);
   }
 
   const ordersSheet = XLSX.utils.aoa_to_sheet(orderRows);
   ordersSheet['!cols'] = [
     { wch: 18 },
     { wch: 22 },
+    { wch: 16 },
     { wch: 30 },
     { wch: 18 },
     { wch: 14 },

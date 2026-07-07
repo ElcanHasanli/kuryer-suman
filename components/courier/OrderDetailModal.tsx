@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -31,17 +32,16 @@ import {
   getOrderTypeLabel,
   getPaymentTypeLabel,
   isPickupOrder,
+  customerDisplayName,
+  customerOrderAddress,
 } from '@/lib/utils';
+import { CustomerPhoneBlock } from '@/components/courier/CustomerPhone';
 
 interface OrderDetailModalProps {
   orderId: number;
   onClose: () => void;
   onUpdated: () => void;
   initialEditMode?: boolean;
-}
-
-function customerName(order: Order) {
-  return order.name || order.customer_name || '—';
 }
 
 function fillCompletionForm(order: Order, setters: {
@@ -332,8 +332,9 @@ export default function OrderDetailModal({
 
         {order && !showCompleteForm && (
           <>
-            <DetailRow label="Müştəri" value={customerName(order)} />
-            <DetailRow label="Ünvan" value={order.address} />
+            <DetailRow label="Müştəri" value={customerDisplayName(order)} />
+            <DetailRow label="Ünvan" value={customerOrderAddress(order)} />
+            <DetailRow label="Telefon" value={<CustomerPhoneBlock order={order} />} />
             <DetailRow
               label="Növ"
               value={getOrderTypeLabel(order.order_type)}
@@ -521,7 +522,7 @@ export default function OrderDetailModal({
                 ? isPickup
                   ? 'Götürülən boş bidon məlumatını düzəldin'
                   : 'Tamamlama məlumatlarını düzəldin'
-                : `${customerName(order)} — ${order.address}`}
+                : `${customerDisplayName(order)} — ${customerOrderAddress(order)}`}
             </p>
             {isEditMode && editRemaining && (
               <p className="courier-edit-window" style={{ marginTop: 0 }}>
@@ -723,11 +724,11 @@ export default function OrderDetailModal({
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="courier-detail-row">
       <p className="courier-detail-row__label">{label}</p>
-      <p className="courier-detail-row__value">{value}</p>
+      <div className="courier-detail-row__value">{value}</div>
     </div>
   );
 }
