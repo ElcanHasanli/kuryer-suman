@@ -26,7 +26,7 @@ import {
 } from '@/lib/dates';
 import type { DateRange } from '@/lib/dates';
 import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
-import { orderRevenue, orderTotal, parseAmount } from '@/lib/orderAmounts';
+import { orderRevenue, orderTotal, parseAmount, totalCollectedFromOrder } from '@/lib/orderAmounts';
 import type { DateFilterPeriod, ExpensesResponse, Notification, Order } from '@/lib/types';
 import { getOrderStatusLabel, getOrderTypeLabel, getPaymentTypeLabel, isPickupOrder, customerDisplayName, customerOrderAddress } from '@/lib/utils';
 
@@ -67,7 +67,7 @@ function paymentSummary(order: Order) {
   if (isPickupOrder(order)) return getOrderTypeLabel('pickup');
   const label = paymentLabel(order.payment_type);
   if (order.payment_type === 'credit') return label;
-  const paid = parseAmount(order.amount_paid);
+  const paid = totalCollectedFromOrder(order);
   const total = orderTotal(order);
   const remaining = parseAmount(order.remaining_amount);
   if (!order.is_paid && remaining > 0) {

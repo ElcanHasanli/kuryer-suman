@@ -131,7 +131,7 @@ export function buildHistoryExportBlob(options: {
       getOrderTypeLabel(order.order_type),
       getOrderStatusLabel(order.status),
       round2(orderTotal(order)),
-      round2(parseAmount(order.amount_paid)),
+      round2(orderRevenue(order)),
       getPaymentTypeLabel(order.payment_type),
       formatPaidForExcel(order.is_paid),
       orderNotesText(order) || '—',

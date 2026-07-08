@@ -37,6 +37,14 @@ export interface Order {
   remaining_amount?: number | string | null;
   /** Müştərinin ümumi borcu */
   debt?: number | string | null;
+  /** Müştərinin cari ümumi borcu (AZN) — API join */
+  customer_debt?: number | string | null;
+  /** Tamamlanmamış sifarişdə: price + customer_debt */
+  max_completion_payment?: number | string | null;
+  /** Tamamlama zamanı köhnə borcdan ödənilən hissə */
+  debt_paid_at_completion?: number | string | null;
+  /** Kuryerin aldığı ümumi məbləğ (sifariş + köhnə borc) */
+  total_collected?: number | string | null;
   empty_bidons_returned?: number;
   full_bidons_given?: number | null;
   completed_at?: string;
