@@ -963,6 +963,53 @@
   color: #1d4ed8;
 }
 
+.order-prepaid-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #15803d;
+  white-space: nowrap;
+}
+
+.order-extras-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.order-extras-list__row,
+.order-extras-list__total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-extras-list__total {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid #e5e7eb;
+  font-weight: 600;
+}
+
+.order-extras-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.order-extras-inline__item {
+  font-size: 12px;
+  color: #6b7280;
+}
+
 .courier-form-hint {
   font-size: 13px;
   color: #6b7280;

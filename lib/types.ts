@@ -13,6 +13,13 @@ export type OrderStatus = 'pending' | 'assigned' | 'in_progress' | 'completed';
 export type PaymentType = 'cash' | 'card' | 'credit';
 export type OrderType = 'delivery' | 'pickup';
 
+export interface OrderExtra {
+  type: string;
+  label: string;
+  amount: number | string;
+  quantity?: number;
+}
+
 export interface Order {
   id: number;
   customer_id?: number;
@@ -23,6 +30,14 @@ export interface Order {
   bidons_count: number;
   /** Sifarişin ümumi məbləği (₼), ədəd başına deyil */
   price: number;
+  /** Su vahid qiyməti (2.50, 3.00) */
+  unit_price?: number | string | null;
+  /** Pompa, dispenser, cərimə və s. */
+  extras?: OrderExtra[];
+  /** Müştəri artıq ödəyib */
+  is_prepaid?: boolean;
+  /** Əvvəlcədən ödənilmiş məbləğ */
+  prepaid_amount?: number | string | null;
   status: OrderStatus;
   order_type?: OrderType;
   /** Planlaşdırılmış tarix (YYYY-MM-DD, Asia/Baku) */
@@ -39,7 +54,7 @@ export interface Order {
   debt?: number | string | null;
   /** Müştərinin cari ümumi borcu (AZN) — API join */
   customer_debt?: number | string | null;
-  /** Tamamlanmamış sifarişdə: price + customer_debt */
+  /** Tamamlanmamış sifarişdə: (price - prepaid_amount) + customer_debt */
   max_completion_payment?: number | string | null;
   /** Tamamlama zamanı köhnə borcdan ödənilən hissə */
   debt_paid_at_completion?: number | string | null;

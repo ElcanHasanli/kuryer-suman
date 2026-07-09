@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
 import { CustomerPhone } from '@/components/courier/CustomerPhone';
+import { PrepaidBadge } from '@/components/courier/OrderExtras';
 import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
@@ -524,7 +525,10 @@ function OrdersList({
             {orders.map((order) => (
               <tr key={order.id}>
                 <td className="cell-strong">
-                  {customerDisplayName(order)}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {customerDisplayName(order)}
+                    {order.is_prepaid && <PrepaidBadge />}
+                  </span>
                 </td>
                 <td>
                   <CustomerPhone order={order} showSecondary={false} />
@@ -603,6 +607,7 @@ function OrdersList({
               <h3 className="order-card__name">{customerDisplayName(order)}</h3>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <OrderTypeBadge order={order} />
+                {order.is_prepaid && <PrepaidBadge />}
                 {showStatus && (
                   <span className="courier-btn" style={{ fontSize: '11px', padding: '4px 8px' }}>
                     {statusLabel(order.status)}

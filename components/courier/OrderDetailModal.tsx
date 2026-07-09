@@ -19,11 +19,15 @@ import {
 import {
   customerDebtAmount,
   debtPaidFromCollection,
+  extrasTotal,
   maxCompletionPayment,
+  orderDueAmount,
   orderShortfallFromCollection,
   orderTotal,
   orderUnitPrice,
   parseAmount,
+  prepaidAmountFromOrder,
+  priceFromBidonsAndExtras,
   priceFromUnitAndBidons,
   totalCollectedFromOrder,
 } from '@/lib/orderAmounts';
@@ -46,6 +50,7 @@ import {
   customerOrderAddress,
 } from '@/lib/utils';
 import { CustomerPhoneBlock } from '@/components/courier/CustomerPhone';
+import { OrderExtrasList, PrepaidBadge } from '@/components/courier/OrderExtras';
 
 interface OrderDetailModalProps {
   orderId: number;
@@ -65,22 +70,23 @@ function fillCompletionForm(order: Order, setters: {
   const unit = orderUnitPrice(order);
   const bidons = order.full_bidons_given ?? order.bidons_count ?? 0;
   const stored = parseAmount(order.price);
-  const calculated = priceFromUnitAndBidons(unit, bidons);
+  const calculated = priceFromBidonsAndExtras(unit, bidons, order.extras);
   const priceManual = Math.abs(stored - calculated) > 0.009;
+  const prepaid = prepaidAmountFromOrder(order);
+  const due = orderDueAmount(stored > 0 ? stored : calculated, prepaid);
 
   setters.setPaymentType((order.payment_type as PaymentType) || 'cash');
   setters.setEmptyBidons(String(order.empty_bidons_returned ?? 0));
   setters.setFullBidons(String(bidons));
   setters.setNotes(typeof order.notes === 'string' ? order.notes : '');
   setters.setPrice(String(stored > 0 ? stored : calculated));
-  const defaultPrice = stored > 0 ? stored : calculated;
   const collected = totalCollectedFromOrder(order);
   setters.setAmountPaid(
     String(
       collected > 0
         ? collected
-        : defaultPrice > 0
-          ? defaultPrice
+        : due > 0
+          ? due
           : ''
     )
   );
@@ -155,10 +161,11 @@ export default function OrderDetailModal({
 
   const syncPriceFromBidons = (bidonCount: number, syncAmountPaid: boolean) => {
     if (!order) return;
-    const calculated = priceFromUnitAndBidons(orderUnitPrice(order), bidonCount);
+    const calculated = priceFromBidonsAndExtras(orderUnitPrice(order), bidonCount, order.extras);
     setPrice(String(calculated));
     if (syncAmountPaid && paymentType !== 'credit') {
-      setAmountPaid(String(calculated));
+      const due = orderDueAmount(calculated, prepaidAmountFromOrder(order));
+      setAmountPaid(String(due));
     }
   };
 
@@ -176,10 +183,12 @@ export default function OrderDetailModal({
             fillPickupForm(data, { setEmptyBidons, setNotes });
           } else {
             const bidons = data.bidons_count ?? 0;
-            const calculated = priceFromUnitAndBidons(orderUnitPrice(data), bidons);
+            const calculated = priceFromBidonsAndExtras(orderUnitPrice(data), bidons, data.extras);
+            const prepaid = prepaidAmountFromOrder(data);
+            const due = orderDueAmount(calculated, prepaid);
             setFullBidons(String(bidons));
             setPrice(String(calculated));
-            setAmountPaid(calculated > 0 ? String(calculated) : '');
+            setAmountPaid(due > 0 ? String(due) : '');
             setPriceManual(false);
           }
         }
@@ -251,10 +260,11 @@ export default function OrderDetailModal({
             : priceFromUnitAndBidons(unit, bidonCount)
           : priceFromUnitAndBidons(unit, bidonCount);
         const customerDebt = customerDebtAmount(order!);
+        const prepaid = prepaidAmountFromOrder(order!);
         const maxPayable =
           order!.max_completion_payment != null && order!.max_completion_payment !== ''
             ? parseAmount(order!.max_completion_payment)
-            : maxCompletionPayment(orderPrice, customerDebt);
+            : maxCompletionPayment(orderPrice, customerDebt, prepaid);
         const totalCollected =
           paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
 
@@ -309,24 +319,22 @@ export default function OrderDetailModal({
   const formOrderPrice = order
     ? isEditMode && priceManual
       ? parseFloat(price) || 0
-      : priceFromUnitAndBidons(unitPrice, bidonCount)
+      : priceFromBidonsAndExtras(unitPrice, bidonCount, order.extras)
     : 0;
+  const prepaidAmount = order ? prepaidAmountFromOrder(order) : 0;
+  const formOrderDue = orderDueAmount(formOrderPrice, prepaidAmount);
   const formAmountPaid =
     paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
   const customerDebt = order ? customerDebtAmount(order) : 0;
-  const maxPayable = order
-    ? order.max_completion_payment != null && order.max_completion_payment !== ''
-      ? parseAmount(order.max_completion_payment)
-      : maxCompletionPayment(formOrderPrice, customerDebt)
-    : 0;
+  const maxPayable = maxCompletionPayment(formOrderPrice, customerDebt, prepaidAmount);
   const formDebtPaidPreview = debtPaidFromCollection(
     formAmountPaid,
-    formOrderPrice,
+    formOrderDue,
     customerDebt
   );
   const formOrderShortfall = orderShortfallFromCollection(
     formAmountPaid,
-    formOrderPrice
+    formOrderDue
   );
   const isPickup = order ? isPickupOrder(order) : false;
 
@@ -390,7 +398,26 @@ export default function OrderDetailModal({
                   label="Ədəd qiyməti"
                   value={`₼${orderUnitPrice(order).toFixed(2)}`}
                 />
+                {order.extras && order.extras.length > 0 && (
+                  <DetailRow
+                    label="Əlavələr"
+                    value={<OrderExtrasList extras={order.extras} />}
+                  />
+                )}
                 <DetailRow label="Cəmi" value={`₼${orderTotal(order).toFixed(2)}`} />
+                {order.is_prepaid && (
+                  <DetailRow
+                    label="Ödəniş statusu"
+                    value={
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <PrepaidBadge />
+                        {prepaidAmountFromOrder(order) > 0 && (
+                          <span>₼{prepaidAmountFromOrder(order).toFixed(2)} əvvəlcədən ödənilib</span>
+                        )}
+                      </span>
+                    }
+                  />
+                )}
                 {customerDebtAmount(order) > 0 && (
                   <DetailRow
                     label="Müştəri borcu"
@@ -419,6 +446,12 @@ export default function OrderDetailModal({
             )}
             {order.status === 'completed' && !isPickup && (
               <>
+                {order.is_prepaid && prepaidAmountFromOrder(order) > 0 && (
+                  <DetailRow
+                    label="Əvvəlcədən ödənilib"
+                    value={`₼${prepaidAmountFromOrder(order).toFixed(2)}`}
+                  />
+                )}
                 <DetailRow label="Ödəniş" value={getPaymentTypeLabel(order.payment_type)} />
                 <DetailRow
                   label="Sifarişə ödənilən"
@@ -617,10 +650,15 @@ export default function OrderDetailModal({
                     setAmountPaid('0');
                   } else if (order) {
                     const count = parseInt(fullBidons, 10) || 0;
-                    const calculated = priceFromUnitAndBidons(orderUnitPrice(order), count);
+                    const calculated = priceFromBidonsAndExtras(
+                      orderUnitPrice(order),
+                      count,
+                      order.extras
+                    );
                     const currentPrice =
                       isEditMode && priceManual ? parseFloat(price) || calculated : calculated;
-                    setAmountPaid(String(currentPrice));
+                    const due = orderDueAmount(currentPrice, prepaidAmountFromOrder(order));
+                    setAmountPaid(String(due));
                   }
                 }}
               >
@@ -633,7 +671,7 @@ export default function OrderDetailModal({
             {order && customerDebt > 0 && (
               <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
                 Müştərinin köhnə borcu: <strong>₼{customerDebt.toFixed(2)}</strong>
-                {maxPayable > formOrderPrice && (
+                {maxPayable > formOrderDue && (
                   <>
                     {' '}
                     · Maks. ödəniş: <strong>₼{maxPayable.toFixed(2)}</strong>
@@ -642,13 +680,39 @@ export default function OrderDetailModal({
               </p>
             )}
 
+            {order && prepaidAmount > 0 && (
+              <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
+                Əvvəlcədən ödənilib: <strong>₼{prepaidAmount.toFixed(2)}</strong>
+                {' · '}
+                Qalan sifariş məbləği: <strong>₼{formOrderDue.toFixed(2)}</strong>
+              </p>
+            )}
+
+            {order && order.extras && order.extras.length > 0 && (
+              <div style={{ margin: '0 0 12px' }}>
+                <OrderExtrasList extras={order.extras} />
+              </div>
+            )}
+
             {order && (
               <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
                 1 bidon = <strong>₼{unitPrice.toFixed(2)}</strong>
                 {bidonCount > 0 && (
                   <>
                     {' '}
-                    → {bidonCount} bidon = <strong>₼{formOrderPrice.toFixed(2)}</strong>
+                    → {bidonCount} bidon ={' '}
+                    <strong>
+                      ₼{priceFromUnitAndBidons(unitPrice, bidonCount).toFixed(2)}
+                    </strong>
+                    {extrasTotal(order.extras) > 0 && (
+                      <>
+                        {' '}
+                        + əlavələr{' '}
+                        <strong>₼{extrasTotal(order.extras).toFixed(2)}</strong>
+                        {' '}
+                        = <strong>₼{formOrderPrice.toFixed(2)}</strong>
+                      </>
+                    )}
                   </>
                 )}
               </p>
@@ -702,9 +766,9 @@ export default function OrderDetailModal({
                 disabled={paymentType === 'credit'}
                 required
               />
-              {paymentType === 'credit' && formOrderPrice > 0 && (
+              {paymentType === 'credit' && formOrderDue > 0 && (
                 <span className="courier-debt-hint">
-                  Bütün məbləğ (₼{formOrderPrice.toFixed(2)}) müştəri borcuna yazılacaq
+                  Qalan sifariş məbləği (₼{formOrderDue.toFixed(2)}) müştəri borcuna yazılacaq
                 </span>
               )}
               {paymentType !== 'credit' && formDebtPaidPreview > 0 && (
