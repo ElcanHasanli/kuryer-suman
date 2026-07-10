@@ -38,6 +38,8 @@ export interface Order {
   is_prepaid?: boolean;
   /** Əvvəlcədən ödənilmiş məbləğ */
   prepaid_amount?: number | string | null;
+  /** Tamamlamada sifariş üçün qalan: price - prepaid_amount */
+  order_due?: number | string | null;
   status: OrderStatus;
   order_type?: OrderType;
   /** Planlaşdırılmış tarix (YYYY-MM-DD, Asia/Baku) */
@@ -46,6 +48,8 @@ export interface Order {
   notes?: string | OrderNote[];
   payment_type?: PaymentType | null;
   amount_paid?: number | string | null;
+  /** Tamamlama zamanı köhnə borcdan ödənilən (request/response) */
+  debt_paid?: number | string | null;
   is_paid?: boolean;
   paid_at?: string | null;
   /** Bu sifarişdə ödənilməmiş qalıq */
@@ -54,7 +58,11 @@ export interface Order {
   debt?: number | string | null;
   /** Müştərinin cari ümumi borcu (AZN) — API join */
   customer_debt?: number | string | null;
-  /** Tamamlanmamış sifarişdə: (price - prepaid_amount) + customer_debt */
+  /** Sifariş ödənişi inputunun max-ı (= order_due) */
+  max_order_payment?: number | string | null;
+  /** Borc ödənişi inputunun max-ı (= customer_debt) */
+  max_debt_payment?: number | string | null;
+  /** Ümumi max: order_due + customer_debt */
   max_completion_payment?: number | string | null;
   /** Tamamlama zamanı köhnə borcdan ödənilən hissə */
   debt_paid_at_completion?: number | string | null;
@@ -80,7 +88,10 @@ export interface Order {
 
 export interface CompleteOrderPayload {
   payment_type: PaymentType;
+  /** Yalnız sifariş qiyməti / qalan hissəsi */
   amount_paid: number;
+  /** Yalnız köhnə müştəri borcu */
+  debt_paid?: number;
   empty_bidons_returned: number;
   full_bidons_given: number;
   notes?: string;

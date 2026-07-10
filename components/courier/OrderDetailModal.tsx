@@ -18,11 +18,12 @@ import {
 } from '@/lib/courierEdit';
 import {
   customerDebtAmount,
-  debtPaidFromCollection,
+  debtPaidFromOrder,
   extrasTotal,
-  maxCompletionPayment,
+  maxDebtPaymentFromOrder,
+  maxOrderPaymentFromOrder,
   orderDueAmount,
-  orderShortfallFromCollection,
+  orderDueFromOrder,
   orderTotal,
   orderUnitPrice,
   parseAmount,
@@ -62,6 +63,7 @@ interface OrderDetailModalProps {
 function fillCompletionForm(order: Order, setters: {
   setPaymentType: (v: PaymentType) => void;
   setAmountPaid: (v: string) => void;
+  setDebtPaid: (v: string) => void;
   setEmptyBidons: (v: string) => void;
   setFullBidons: (v: string) => void;
   setNotes: (v: string) => void;
@@ -72,24 +74,26 @@ function fillCompletionForm(order: Order, setters: {
   const stored = parseAmount(order.price);
   const calculated = priceFromBidonsAndExtras(unit, bidons, order.extras);
   const priceManual = Math.abs(stored - calculated) > 0.009;
-  const prepaid = prepaidAmountFromOrder(order);
-  const due = orderDueAmount(stored > 0 ? stored : calculated, prepaid);
+  const due = orderDueFromOrder(order);
+  const maxDebt = maxDebtPaymentFromOrder(order);
+  const isCredit = order.payment_type === 'credit';
 
   setters.setPaymentType((order.payment_type as PaymentType) || 'cash');
   setters.setEmptyBidons(String(order.empty_bidons_returned ?? 0));
   setters.setFullBidons(String(bidons));
   setters.setNotes(typeof order.notes === 'string' ? order.notes : '');
   setters.setPrice(String(stored > 0 ? stored : calculated));
-  const collected = totalCollectedFromOrder(order);
-  setters.setAmountPaid(
-    String(
-      collected > 0
-        ? collected
-        : due > 0
-          ? due
-          : ''
-    )
-  );
+
+  if (isCredit) {
+    setters.setAmountPaid('0');
+    setters.setDebtPaid('0');
+  } else if (order.status === 'completed') {
+    setters.setAmountPaid(String(parseAmount(order.amount_paid)));
+    setters.setDebtPaid(String(debtPaidFromOrder(order)));
+  } else {
+    setters.setAmountPaid(String(due));
+    setters.setDebtPaid('0');
+  }
   return priceManual;
 }
 
@@ -119,6 +123,7 @@ export default function OrderDetailModal({
 
   const [paymentType, setPaymentType] = useState<PaymentType>('cash');
   const [amountPaid, setAmountPaid] = useState('');
+  const [debtPaid, setDebtPaid] = useState('0');
   const [price, setPrice] = useState('');
   const [priceManual, setPriceManual] = useState(false);
   const [emptyBidons, setEmptyBidons] = useState('0');
@@ -148,6 +153,7 @@ export default function OrderDetailModal({
       const manual = fillCompletionForm(data, {
         setPaymentType,
         setAmountPaid,
+        setDebtPaid,
         setEmptyBidons,
         setFullBidons,
         setNotes,
@@ -166,6 +172,7 @@ export default function OrderDetailModal({
     if (syncAmountPaid && paymentType !== 'credit') {
       const due = orderDueAmount(calculated, prepaidAmountFromOrder(order));
       setAmountPaid(String(due));
+      // debt_paid ayrı qalır — sifariş qiyməti dəyişəndə sıfırlamırıq
     }
   };
 
@@ -184,11 +191,14 @@ export default function OrderDetailModal({
           } else {
             const bidons = data.bidons_count ?? 0;
             const calculated = priceFromBidonsAndExtras(orderUnitPrice(data), bidons, data.extras);
-            const prepaid = prepaidAmountFromOrder(data);
-            const due = orderDueAmount(calculated, prepaid);
+            const due = orderDueFromOrder({
+              ...data,
+              price: calculated > 0 ? calculated : data.price,
+            });
             setFullBidons(String(bidons));
             setPrice(String(calculated));
-            setAmountPaid(due > 0 ? String(due) : '');
+            setAmountPaid(String(due));
+            setDebtPaid('0');
             setPriceManual(false);
           }
         }
@@ -257,20 +267,31 @@ export default function OrderDetailModal({
         const orderPrice = isEditMode
           ? priceManual
             ? parseFloat(price) || 0
-            : priceFromUnitAndBidons(unit, bidonCount)
-          : priceFromUnitAndBidons(unit, bidonCount);
-        const customerDebt = customerDebtAmount(order!);
+            : priceFromBidonsAndExtras(unit, bidonCount, order!.extras)
+          : priceFromBidonsAndExtras(unit, bidonCount, order!.extras);
         const prepaid = prepaidAmountFromOrder(order!);
-        const maxPayable =
-          order!.max_completion_payment != null && order!.max_completion_payment !== ''
-            ? parseAmount(order!.max_completion_payment)
-            : maxCompletionPayment(orderPrice, customerDebt, prepaid);
-        const totalCollected =
+        const maxOrder =
+          order!.max_order_payment != null && order!.max_order_payment !== ''
+            ? parseAmount(order!.max_order_payment)
+            : orderDueAmount(orderPrice, prepaid);
+        const maxDebt = maxDebtPaymentFromOrder(order!);
+        const paidOrderRaw =
           paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
+        const paidDebtRaw =
+          paymentType === 'credit' ? 0 : parseFloat(debtPaid) || 0;
+        const paidOrder = Math.min(Math.max(0, paidOrderRaw), maxOrder);
+        const paidDebt = Math.min(Math.max(0, paidDebtRaw), maxDebt);
 
-        if (paymentType !== 'credit' && totalCollected > maxPayable + 0.009) {
+        if (paymentType !== 'credit' && paidOrderRaw > maxOrder + 0.009) {
           setError(
-            `Ödənilən məbləğ maksimum ₼${maxPayable.toFixed(2)} ola bilər (sifariş + köhnə borc)`
+            `Sifariş ödənişi maksimum ₼${maxOrder.toFixed(2)} ola bilər`
+          );
+          setSubmitting(false);
+          return;
+        }
+        if (paymentType !== 'credit' && paidDebtRaw > maxDebt + 0.009) {
+          setError(
+            `Borc ödənişi maksimum ₼${maxDebt.toFixed(2)} ola bilər`
           );
           setSubmitting(false);
           return;
@@ -278,7 +299,8 @@ export default function OrderDetailModal({
 
         const payload: CompleteOrderPayload = {
           payment_type: paymentType,
-          amount_paid: totalCollected,
+          amount_paid: paidOrder,
+          debt_paid: paidDebt,
           empty_bidons_returned: parseInt(emptyBidons, 10) || 0,
           full_bidons_given: bidonCount,
           notes: notes.trim() || undefined,
@@ -322,20 +344,26 @@ export default function OrderDetailModal({
       : priceFromBidonsAndExtras(unitPrice, bidonCount, order.extras)
     : 0;
   const prepaidAmount = order ? prepaidAmountFromOrder(order) : 0;
-  const formOrderDue = orderDueAmount(formOrderPrice, prepaidAmount);
+  const formOrderDue = order
+    ? isEditMode && priceManual
+      ? orderDueAmount(formOrderPrice, prepaidAmount)
+      : orderDueFromOrder(order)
+    : 0;
+  const maxOrderPay = order
+    ? isEditMode && priceManual
+      ? orderDueAmount(formOrderPrice, prepaidAmount)
+      : maxOrderPaymentFromOrder(order)
+    : 0;
+  const maxDebtPay = order ? maxDebtPaymentFromOrder(order) : 0;
+  const customerDebt = order ? customerDebtAmount(order) : 0;
   const formAmountPaid =
     paymentType === 'credit' ? 0 : parseFloat(amountPaid) || 0;
-  const customerDebt = order ? customerDebtAmount(order) : 0;
-  const maxPayable = maxCompletionPayment(formOrderPrice, customerDebt, prepaidAmount);
-  const formDebtPaidPreview = debtPaidFromCollection(
-    formAmountPaid,
-    formOrderDue,
-    customerDebt
-  );
-  const formOrderShortfall = orderShortfallFromCollection(
-    formAmountPaid,
-    formOrderDue
-  );
+  const formDebtPaid =
+    paymentType === 'credit' ? 0 : parseFloat(debtPaid) || 0;
+  const formTotalCollected = formAmountPaid + formDebtPaid;
+  const formOrderShortfall = Math.max(0, formOrderDue - formAmountPaid);
+  const orderPaymentDisabled =
+    paymentType === 'credit' || maxOrderPay <= 0;
   const isPickup = order ? isPickupOrder(order) : false;
 
   return (
@@ -461,12 +489,13 @@ export default function OrderDetailModal({
                       : `₼${parseAmount(order.amount_paid).toFixed(2)}`
                   }
                 />
-                {parseAmount(order.debt_paid_at_completion) > 0 && (
+                {parseAmount(order.debt_paid_at_completion) > 0 ||
+                  debtPaidFromOrder(order) > 0 ? (
                   <DetailRow
                     label="Köhnə borcdan ödənilən"
-                    value={`₼${parseAmount(order.debt_paid_at_completion).toFixed(2)}`}
+                    value={`₼${debtPaidFromOrder(order).toFixed(2)}`}
                   />
-                )}
+                ) : null}
                 {totalCollectedFromOrder(order) > 0 && order.payment_type !== 'credit' && (
                   <DetailRow
                     label="Ümumi alınan"
@@ -648,6 +677,7 @@ export default function OrderDetailModal({
                   setPaymentType(type);
                   if (type === 'credit') {
                     setAmountPaid('0');
+                    setDebtPaid('0');
                   } else if (order) {
                     const count = parseInt(fullBidons, 10) || 0;
                     const calculated = priceFromBidonsAndExtras(
@@ -657,8 +687,12 @@ export default function OrderDetailModal({
                     );
                     const currentPrice =
                       isEditMode && priceManual ? parseFloat(price) || calculated : calculated;
-                    const due = orderDueAmount(currentPrice, prepaidAmountFromOrder(order));
+                    const due =
+                      isEditMode && priceManual
+                        ? orderDueAmount(currentPrice, prepaidAmountFromOrder(order))
+                        : orderDueFromOrder(order);
                     setAmountPaid(String(due));
+                    setDebtPaid('0');
                   }
                 }}
               >
@@ -671,12 +705,6 @@ export default function OrderDetailModal({
             {order && customerDebt > 0 && (
               <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
                 Müştərinin köhnə borcu: <strong>₼{customerDebt.toFixed(2)}</strong>
-                {maxPayable > formOrderDue && (
-                  <>
-                    {' '}
-                    · Maks. ödəniş: <strong>₼{maxPayable.toFixed(2)}</strong>
-                  </>
-                )}
               </p>
             )}
 
@@ -749,21 +777,21 @@ export default function OrderDetailModal({
             )}
 
             <label className="courier-form-label">
-              Ödənilən məbləğ (₼)
+              Sifariş ödənişi (₼)
               <input
                 className="courier-form-input"
                 type="number"
                 step="0.01"
                 min="0"
-                max={paymentType === 'credit' ? undefined : maxPayable || undefined}
-                value={paymentType === 'credit' ? '0' : amountPaid}
+                max={orderPaymentDisabled ? undefined : maxOrderPay || undefined}
+                value={paymentType === 'credit' || maxOrderPay <= 0 ? '0' : amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
                 style={
-                  paymentType === 'credit'
+                  orderPaymentDisabled
                     ? { backgroundColor: '#f3f4f6', color: '#6b7280' }
                     : undefined
                 }
-                disabled={paymentType === 'credit'}
+                disabled={orderPaymentDisabled}
                 required
               />
               {paymentType === 'credit' && formOrderDue > 0 && (
@@ -771,9 +799,9 @@ export default function OrderDetailModal({
                   Qalan sifariş məbləği (₼{formOrderDue.toFixed(2)}) müştəri borcuna yazılacaq
                 </span>
               )}
-              {paymentType !== 'credit' && formDebtPaidPreview > 0 && (
+              {paymentType !== 'credit' && maxOrderPay <= 0 && (
                 <span className="courier-debt-hint">
-                  <strong>₼{formDebtPaidPreview.toFixed(2)}</strong> köhnə borcdan ödəniləcək
+                  Sifariş artıq ödənilib — sifariş ödənişi 0
                 </span>
               )}
               {paymentType !== 'credit' && formOrderShortfall > 0 && (
@@ -782,6 +810,43 @@ export default function OrderDetailModal({
                 </span>
               )}
             </label>
+
+            {customerDebt > 0 && (
+              <label className="courier-form-label">
+                Borc ödənişi (₼)
+                <input
+                  className="courier-form-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={paymentType === 'credit' ? undefined : maxDebtPay || undefined}
+                  value={paymentType === 'credit' ? '0' : debtPaid}
+                  onChange={(e) => setDebtPaid(e.target.value)}
+                  style={
+                    paymentType === 'credit'
+                      ? { backgroundColor: '#f3f4f6', color: '#6b7280' }
+                      : undefined
+                  }
+                  disabled={paymentType === 'credit'}
+                />
+                <span className="courier-form-hint">
+                  Maks. ₼{maxDebtPay.toFixed(2)} (köhnə borc)
+                </span>
+              </label>
+            )}
+
+            {paymentType !== 'credit' && formTotalCollected > 0 && (
+              <p className="courier-form-hint" style={{ margin: '0 0 12px' }}>
+                Ümumi alınacaq:{' '}
+                <strong>₼{formTotalCollected.toFixed(2)}</strong>
+                {formDebtPaid > 0 && (
+                  <>
+                    {' '}
+                    (sifariş ₼{formAmountPaid.toFixed(2)} + borc ₼{formDebtPaid.toFixed(2)})
+                  </>
+                )}
+              </p>
+            )}
 
             <label className="courier-form-label">
               Qaytarılan boş bidon

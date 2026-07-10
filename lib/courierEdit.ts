@@ -54,6 +54,9 @@ export function completionErrorMessage(err: unknown, fallback: string): string {
       case 'ORDER_NOT_VISIBLE':
         return 'Sifariş artıq redaktə üçün görünmür';
       case 'AMOUNT_EXCEEDS_ORDER':
+        return 'Sifariş ödənişi qalan sifariş məbləğindən böyük ola bilməz';
+      case 'AMOUNT_EXCEEDS_DEBT':
+        return 'Borc ödənişi müştəri borcundan böyük ola bilməz';
       case 'AMOUNT_EXCEEDS_PAYABLE':
         return 'Ödənilən məbləğ sifariş qiyməti və müştəri borcunun cəmindən böyük ola bilməz';
     }

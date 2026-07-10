@@ -5,6 +5,11 @@ export function orderTotal(order: {
   return Number(order.price ?? 0) || 0;
 }
 
+export function parseAmount(value: number | string | null | undefined): number {
+  if (value == null || value === '') return 0;
+  return Number(value) || 0;
+}
+
 export function orderUnitPrice(order: {
   unit_price?: number | string | null;
   price?: number | string | null;
@@ -38,6 +43,41 @@ export function orderDueAmount(price: number, prepaidAmount = 0): number {
   return Math.max(0, Math.round((price - prepaidAmount) * 100) / 100);
 }
 
+/** API `order_due` və ya price - prepaid */
+export function orderDueFromOrder(order: {
+  order_due?: number | string | null;
+  price?: number | string | null;
+  prepaid_amount?: number | string | null;
+}): number {
+  if (order.order_due != null && order.order_due !== '') {
+    return parseAmount(order.order_due);
+  }
+  return orderDueAmount(orderTotal(order), prepaidAmountFromOrder(order));
+}
+
+export function maxOrderPaymentFromOrder(order: {
+  max_order_payment?: number | string | null;
+  order_due?: number | string | null;
+  price?: number | string | null;
+  prepaid_amount?: number | string | null;
+}): number {
+  if (order.max_order_payment != null && order.max_order_payment !== '') {
+    return parseAmount(order.max_order_payment);
+  }
+  return orderDueFromOrder(order);
+}
+
+export function maxDebtPaymentFromOrder(order: {
+  max_debt_payment?: number | string | null;
+  customer_debt?: number | string | null;
+  debt?: number | string | null;
+}): number {
+  if (order.max_debt_payment != null && order.max_debt_payment !== '') {
+    return parseAmount(order.max_debt_payment);
+  }
+  return customerDebtAmount(order);
+}
+
 export function maxCompletionPayment(
   price: number,
   customerDebt: number,
@@ -50,17 +90,13 @@ export function orderRevenue(order: {
   price?: number | string | null;
   amount_paid?: number | string | null;
   total_collected?: number | string | null;
+  debt_paid?: number | string | null;
   debt_paid_at_completion?: number | string | null;
   payment_type?: string | null;
 }): number {
   const collected = totalCollectedFromOrder(order);
   if (collected > 0) return collected;
   return orderTotal(order);
-}
-
-export function parseAmount(value: number | string | null | undefined): number {
-  if (value == null || value === '') return 0;
-  return Number(value) || 0;
 }
 
 export function orderRemainingDue(price: number, amountPaid: number): number {
@@ -78,39 +114,30 @@ export function customerDebtAmount(order: {
   return parseAmount(order.debt);
 }
 
-
-/** Kuryerdən alınan ümumi məbləğdən sifarişə gedən hissə */
-export function orderPaymentFromCollection(totalCollected: number, price: number): number {
-  return Math.min(totalCollected, price);
-}
-
-/** Kuryerdən alınan ümumi məbləğdən köhnə borca gedən hissə */
-export function debtPaidFromCollection(
-  totalCollected: number,
-  price: number,
-  customerDebt: number
-): number {
-  const excess = Math.max(0, totalCollected - price);
-  return Math.min(excess, customerDebt);
-}
-
-/** Sifarişdə ödənilməyən qalıq (ümumi məbləğdən) */
-export function orderShortfallFromCollection(totalCollected: number, price: number): number {
-  return Math.max(0, price - totalCollected);
+/** Tamamlama zamanı köhnə borcdan ödənilən */
+export function debtPaidFromOrder(order: {
+  debt_paid?: number | string | null;
+  debt_paid_at_completion?: number | string | null;
+}): number {
+  if (order.debt_paid != null && order.debt_paid !== '') {
+    return parseAmount(order.debt_paid);
+  }
+  return parseAmount(order.debt_paid_at_completion);
 }
 
 /** Tamamlanmış sifarişdə kuryerin aldığı ümumi məbləğ */
 export function totalCollectedFromOrder(order: {
   total_collected?: number | string | null;
   amount_paid?: number | string | null;
+  debt_paid?: number | string | null;
   debt_paid_at_completion?: number | string | null;
   payment_type?: string | null;
 }): number {
   if (order.total_collected != null && order.total_collected !== '') {
     return parseAmount(order.total_collected);
   }
-  const debtPaid = parseAmount(order.debt_paid_at_completion);
-  if (debtPaid > 0) {
+  const debtPaid = debtPaidFromOrder(order);
+  if (debtPaid > 0 || (order.amount_paid != null && order.amount_paid !== '')) {
     return parseAmount(order.amount_paid) + debtPaid;
   }
   if (order.payment_type === 'credit') return 0;
