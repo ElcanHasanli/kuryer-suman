@@ -1133,6 +1133,16 @@
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.warehouse-form__grid--simple {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 520px) {
+  .warehouse-form__grid--simple {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .warehouse-form__notes {
   grid-column: 1 / -1;
 }
@@ -1146,6 +1156,10 @@
   margin: 12px 0 0;
   font-size: 13px;
   color: #374151;
+}
+
+.warehouse-calc-hint--error {
+  color: #b91c1c;
 }
 
 .warehouse-success-box {

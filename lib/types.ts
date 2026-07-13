@@ -7,6 +7,8 @@ export interface User {
   role: UserRole;
   company_id?: number;
   company_name?: string;
+  /** Login /auth/me — kuryerin default anbarı */
+  default_warehouse?: WarehouseInfo | null;
 }
 
 export type OrderStatus = 'pending' | 'assigned' | 'in_progress' | 'completed';
@@ -152,7 +154,20 @@ export interface ExpensesResponse {
   totalExpenses: number;
 }
 
+export interface WarehouseInfo {
+  id?: number;
+  code: string;
+  name: string;
+  full_count?: number;
+  empty_count?: number;
+  updated_at?: string;
+  updated_by_name?: string;
+}
+
 export interface WarehouseStock {
+  id?: number;
+  code?: string;
+  name?: string;
   full_count: number;
   empty_count: number;
   updated_at?: string;
@@ -161,19 +176,31 @@ export interface WarehouseStock {
 
 export interface WarehouseUpdateRecord {
   id?: number;
+  warehouse_id?: number;
+  warehouse_code?: string;
+  warehouse_name?: string;
+  entry_full?: number;
+  entry_empty?: number;
+  exit_full?: number;
+  /** Backend: exit_full − entry_full */
+  taken_full?: number;
+  /** @deprecated köhnə API */
   empty_in?: number;
   full_in?: number;
   full_out?: number;
-  exit_full?: number;
-  remaining_full: number;
+  remaining_full?: number;
   remaining_empty?: number;
   notes?: string;
   created_at?: string;
 }
 
 export interface WarehouseSummaryResponse {
-  warehouse: WarehouseStock;
-  customers: {
+  /** Yeni API: hər iki anbar */
+  warehouses?: WarehouseInfo[];
+  default_warehouse?: WarehouseInfo | null;
+  /** @deprecated köhnə tək anbar cavabı */
+  warehouse?: WarehouseStock;
+  customers?: {
     total_active_bidons: number;
     customer_count: number;
   };
@@ -181,19 +208,21 @@ export interface WarehouseSummaryResponse {
 }
 
 export interface WarehouseUpdatePayload {
-  empty_in?: number;
-  full_in?: number;
-  full_out?: number;
-  exit_full?: number;
-  remaining_full: number;
-  remaining_empty?: number;
-  notes?: string;
+  warehouse_code?: string;
+  warehouse_id?: number;
+  entry_full: number;
+  entry_empty: number;
+  exit_full: number;
 }
 
 export interface WarehouseUpdateResult {
-  stock: WarehouseStock;
+  stock?: WarehouseStock;
+  warehouse?: WarehouseStock;
   update: WarehouseUpdateRecord;
+  warehouses?: WarehouseInfo[];
+  default_warehouse?: WarehouseInfo | null;
   calculation?: {
+    taken_full?: number;
     mismatch?: boolean;
   };
 }

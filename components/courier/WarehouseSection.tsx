@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DateFilterBar from '@/components/courier/DateFilterBar';
+import { useAuth } from '@/context/AuthContext';
 import {
+  ApiError,
   getWarehouseSummary,
   getWarehouseUpdates,
   submitWarehouseUpdate,
@@ -11,19 +13,21 @@ import { formatAppDateTime, todayInputDate, yesterdayInputDate } from '@/lib/dat
 import type { DateRange } from '@/lib/dates';
 import type {
   DateFilterPeriod,
+  WarehouseInfo,
   WarehouseSummaryResponse,
   WarehouseUpdateRecord,
 } from '@/lib/types';
 
 const EMPTY_FORM = {
-  empty_in: '',
-  full_in: '',
-  full_out: '',
+  entry_full: '',
+  entry_empty: '',
   exit_full: '',
-  remaining_full: '',
-  remaining_empty: '',
-  notes: '',
 };
+
+const FALLBACK_WAREHOUSES: WarehouseInfo[] = [
+  { code: 'novxani', name: 'Novxanı' },
+  { code: 'azadliq', name: 'Azadlıq' },
+];
 
 function parseCount(value: string): number | undefined {
   if (value.trim() === '') return undefined;
@@ -31,18 +35,74 @@ function parseCount(value: string): number | undefined {
   return Number.isNaN(n) || n < 0 ? undefined : n;
 }
 
+function warehouseLabel(wh: WarehouseInfo): string {
+  return wh.name || wh.code;
+}
+
+function normalizeWarehouses(summary: WarehouseSummaryResponse | null): WarehouseInfo[] {
+  if (summary?.warehouses?.length) return summary.warehouses;
+  if (summary?.default_warehouse) return [summary.default_warehouse];
+  if (summary?.warehouse) {
+    return [
+      {
+        id: summary.warehouse.id,
+        code: summary.warehouse.code || 'default',
+        name: summary.warehouse.name || 'Anbar',
+        full_count: summary.warehouse.full_count,
+        empty_count: summary.warehouse.empty_count,
+        updated_at: summary.warehouse.updated_at,
+        updated_by_name: summary.warehouse.updated_by_name,
+      },
+    ];
+  }
+  return FALLBACK_WAREHOUSES;
+}
+
+function takenFullFromUpdate(update: WarehouseUpdateRecord): number | null {
+  if (update.taken_full != null) return update.taken_full;
+  if (update.entry_full != null && update.exit_full != null) {
+    return update.exit_full - update.entry_full;
+  }
+  if (update.full_out != null) return update.full_out;
+  return null;
+}
+
 function formatUpdateSummary(update: WarehouseUpdateRecord): string {
   const parts: string[] = [];
+  const name = update.warehouse_name || update.warehouse_code;
+  if (name) parts.push(name);
+
+  if (update.entry_full != null || update.entry_empty != null || update.exit_full != null) {
+    if (update.entry_full != null) parts.push(`girdi: ${update.entry_full} dolu`);
+    if (update.entry_empty != null) parts.push(`${update.entry_empty} boş`);
+    if (update.exit_full != null) parts.push(`çıxdı: ${update.exit_full} dolu`);
+    const taken = takenFullFromUpdate(update);
+    if (taken != null) parts.push(`götürülən: ${taken}`);
+    return parts.join(' · ');
+  }
+
+  // Köhnə format
   if (update.empty_in) parts.push(`+${update.empty_in} boş`);
   if (update.full_in) parts.push(`+${update.full_in} dolu`);
   if (update.full_out) parts.push(`−${update.full_out} dolu`);
   if (update.exit_full) parts.push(`maşın: ${update.exit_full} dolu`);
-  parts.push(`→ ${update.remaining_full} dolu qaldı`);
-  if (update.remaining_empty != null) parts.push(`(${update.remaining_empty} boş)`);
-  return parts.join(', ');
+  if (update.remaining_full != null) parts.push(`→ ${update.remaining_full} dolu qaldı`);
+  return parts.join(', ') || 'Qeyd';
+}
+
+function warehouseErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'EXIT_LESS_THAN_ENTRY') {
+      return 'Dolu çıxış, dolu girişdən az ola bilməz';
+    }
+    return err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Göndərmə uğursuz oldu';
 }
 
 export default function WarehouseSection() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<WarehouseSummaryResponse | null>(null);
   const [history, setHistory] = useState<WarehouseUpdateRecord[]>([]);
   const [historyPeriod, setHistoryPeriod] = useState<DateFilterPeriod>('today');
@@ -53,12 +113,40 @@ export default function WarehouseSection() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [mismatchWarning, setMismatchWarning] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [selectedCode, setSelectedCode] = useState<string>('');
 
   const customRange: DateRange = useMemo(
     () => ({ startDate: customStartDate, endDate: customEndDate }),
     [customStartDate, customEndDate]
+  );
+
+  const warehouses = useMemo(() => normalizeWarehouses(summary), [summary]);
+
+  const defaultCode = useMemo(() => {
+    return (
+      summary?.default_warehouse?.code ||
+      user?.default_warehouse?.code ||
+      warehouses[0]?.code ||
+      ''
+    );
+  }, [summary, user, warehouses]);
+
+  useEffect(() => {
+    if (!selectedCode && defaultCode) {
+      setSelectedCode(defaultCode);
+    } else if (
+      selectedCode &&
+      warehouses.length > 0 &&
+      !warehouses.some((w) => w.code === selectedCode)
+    ) {
+      setSelectedCode(defaultCode);
+    }
+  }, [defaultCode, selectedCode, warehouses]);
+
+  const selectedWarehouse = useMemo(
+    () => warehouses.find((w) => w.code === selectedCode) ?? null,
+    [warehouses, selectedCode]
   );
 
   const loadSummary = useCallback(async () => {
@@ -103,62 +191,70 @@ export default function WarehouseSection() {
     loadHistory();
   }, [loadHistory]);
 
-  const previousFull = summary?.warehouse.full_count ?? 0;
-  const calculatedFull = useMemo(() => {
-    const fullIn = parseCount(form.full_in) ?? 0;
-    const fullOut = parseCount(form.full_out) ?? 0;
-    return previousFull + fullIn - fullOut;
-  }, [form.full_in, form.full_out, previousFull]);
+  const entryFull = parseCount(form.entry_full) ?? 0;
+  const entryEmpty = parseCount(form.entry_empty) ?? 0;
+  const exitFull = parseCount(form.exit_full) ?? 0;
+  const takenFull = exitFull - entryFull;
+  const showTakenPreview =
+    form.entry_full.trim() !== '' && form.exit_full.trim() !== '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const remainingFull = parseCount(form.remaining_full);
-    if (remainingFull === undefined) {
-      setError('«Anbarda qalan dolu» mütləqdir');
+
+    const entryFullVal = parseCount(form.entry_full);
+    const entryEmptyVal = parseCount(form.entry_empty);
+    const exitFullVal = parseCount(form.exit_full);
+
+    if (
+      entryFullVal === undefined ||
+      entryEmptyVal === undefined ||
+      exitFullVal === undefined
+    ) {
+      setError('Bütün sahələri doldurun');
+      return;
+    }
+
+    if (exitFullVal < entryFullVal) {
+      setError('Dolu çıxış, dolu girişdən az ola bilməz');
       return;
     }
 
     setError('');
     setSuccess('');
-    setMismatchWarning('');
     setSubmitting(true);
 
     try {
       const payload = {
-        empty_in: parseCount(form.empty_in),
-        full_in: parseCount(form.full_in),
-        full_out: parseCount(form.full_out),
-        exit_full: parseCount(form.exit_full),
-        remaining_full: remainingFull,
-        remaining_empty: parseCount(form.remaining_empty),
-        notes: form.notes.trim() || undefined,
+        warehouse_code: selectedCode || undefined,
+        entry_full: entryFullVal,
+        entry_empty: entryEmptyVal,
+        exit_full: exitFullVal,
       };
 
       const result = await submitWarehouseUpdate(payload);
-      setSummary((prev) =>
-        prev
-          ? {
-              ...prev,
-              warehouse: result.stock,
-              last_update: result.update,
-            }
-          : {
-              warehouse: result.stock,
-              customers: { total_active_bidons: 0, customer_count: 0 },
-              last_update: result.update,
-            }
-      );
+
+      setSummary((prev) => {
+        const stock = result.stock || result.warehouse;
+        const next: WarehouseSummaryResponse = {
+          ...(prev ?? {}),
+          warehouses: result.warehouses ?? prev?.warehouses,
+          default_warehouse:
+            result.default_warehouse ?? prev?.default_warehouse ?? null,
+          last_update: result.update,
+        };
+        if (stock) next.warehouse = stock;
+        return next;
+      });
 
       setForm(EMPTY_FORM);
-      setSuccess('Anbar yeniləndi');
-      if (result.calculation?.mismatch) {
-        setMismatchWarning(
-          'Hesablanan dolu ilə «yerdə qaldı» uyğun gəlmir'
-        );
-      }
+      const taken =
+        result.calculation?.taken_full ??
+        takenFullFromUpdate(result.update) ??
+        exitFullVal - entryFullVal;
+      setSuccess(`Qeyd edildi · Götürülən dolu: ${taken}`);
       await Promise.all([loadSummary(), loadHistory()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Göndərmə uğursuz oldu');
+      setError(warehouseErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -170,118 +266,113 @@ export default function WarehouseSection() {
 
   return (
     <div className="warehouse-layout">
-      {summary && (
+      {warehouses.length > 0 && (
         <div className="warehouse-summary">
-          <SummaryCard
-            title="Anbarda dolu"
-            value={summary.warehouse.full_count}
-            icon="🟢"
-            color="#10b981"
-          />
-          <SummaryCard
-            title="Anbarda boş"
-            value={summary.warehouse.empty_count}
-            icon="⚪"
-            color="#6b7280"
-          />
-          <SummaryCard
-            title="Müştəridə aktiv"
-            value={summary.customers.total_active_bidons}
-            icon="👥"
-            color="#3b82f6"
-            subtitle={`${summary.customers.customer_count} müştəri`}
-          />
+          {warehouses.map((wh) => (
+            <SummaryCard
+              key={wh.code}
+              title={warehouseLabel(wh)}
+              value={wh.full_count ?? 0}
+              icon={wh.code === selectedCode ? '📍' : '🟢'}
+              color={wh.code === selectedCode ? '#2563eb' : '#10b981'}
+              subtitle={
+                wh.empty_count != null
+                  ? `${wh.empty_count} boş${wh.code === defaultCode ? ' · default' : ''}`
+                  : wh.code === defaultCode
+                    ? 'Default anbar'
+                    : undefined
+              }
+            />
+          ))}
         </div>
-      )}
-
-      {summary?.warehouse.updated_at && (
-        <p className="warehouse-meta">
-          Son yeniləmə:{' '}
-          {formatAppDateTime(summary.warehouse.updated_at, {
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-          {summary.warehouse.updated_by_name && ` · ${summary.warehouse.updated_by_name}`}
-        </p>
       )}
 
       <form onSubmit={handleSubmit} className="courier-panel courier-panel--padded">
         <h2 className="courier-section-title">Su doldurma qeydi</h2>
         <p className="warehouse-form-hint">
-          WhatsApp mesajı əvəzinə rəqəmləri buraya daxil edin. Hazırkı anbar dolu:{' '}
-          <strong>{previousFull}</strong>
+          Anbara girib çıxanda rəqəmləri daxil edin. Götürülən dolu avtomatik
+          hesablanır.
         </p>
 
-        <div className="warehouse-form__grid">
+        <label className="courier-form-label">
+          Anbar
+          <select
+            className="courier-form-select"
+            value={selectedCode}
+            onChange={(e) => setSelectedCode(e.target.value)}
+            required
+          >
+            {warehouses.map((wh) => (
+              <option key={wh.code} value={wh.code}>
+                {warehouseLabel(wh)}
+                {wh.code === defaultCode ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedWarehouse && (
+          <p className="warehouse-meta" style={{ marginTop: 0 }}>
+            Seçilmiş: <strong>{warehouseLabel(selectedWarehouse)}</strong>
+            {selectedWarehouse.full_count != null &&
+              ` · ${selectedWarehouse.full_count} dolu`}
+            {selectedWarehouse.empty_count != null &&
+              ` / ${selectedWarehouse.empty_count} boş`}
+          </p>
+        )}
+
+        <div className="warehouse-form__grid warehouse-form__grid--simple">
           <NumberField
-            label="Anbara boş"
-            value={form.empty_in}
-            onChange={(v) => setForm({ ...form, empty_in: v })}
-            placeholder="8"
-          />
-          <NumberField
-            label="Anbara dolu"
-            value={form.full_in}
-            onChange={(v) => setForm({ ...form, full_in: v })}
-            placeholder="23"
-          />
-          <NumberField
-            label="Anbardan götürülən dolu"
-            value={form.full_out}
-            onChange={(v) => setForm({ ...form, full_out: v })}
-            placeholder="7"
-          />
-          <NumberField
-            label="Maşında dolu"
-            value={form.exit_full}
-            onChange={(v) => setForm({ ...form, exit_full: v })}
-            placeholder="30"
-          />
-          <NumberField
-            label="Anbarda qalan dolu *"
-            value={form.remaining_full}
-            onChange={(v) => setForm({ ...form, remaining_full: v })}
-            placeholder="17"
+            label="Neçə dolu ilə girdiniz"
+            value={form.entry_full}
+            onChange={(v) => setForm({ ...form, entry_full: v })}
+            placeholder="10"
             required
           />
           <NumberField
-            label="Anbarda qalan boş"
-            value={form.remaining_empty}
-            onChange={(v) => setForm({ ...form, remaining_empty: v })}
-            placeholder="8"
+            label="Neçə boş ilə girdiniz"
+            value={form.entry_empty}
+            onChange={(v) => setForm({ ...form, entry_empty: v })}
+            placeholder="5"
+            required
           />
-          <label className="courier-form-label warehouse-form__notes">
-            Qeyd
-            <textarea
-              className="courier-form-input warehouse-form__textarea"
-              rows={2}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Əlavə qeyd..."
-            />
-          </label>
+          <NumberField
+            label="Neçə dolu ilə çıxdınız"
+            value={form.exit_full}
+            onChange={(v) => setForm({ ...form, exit_full: v })}
+            placeholder="20"
+            required
+          />
         </div>
 
-        {(form.full_in || form.full_out) && (
-          <p className="warehouse-calc-hint">
-            Hesablanan dolu: {previousFull} + {parseCount(form.full_in) ?? 0} −{' '}
-            {parseCount(form.full_out) ?? 0} = <strong>{calculatedFull}</strong>
+        {showTakenPreview && (
+          <p
+            className={`warehouse-calc-hint${takenFull < 0 ? ' warehouse-calc-hint--error' : ''}`}
+          >
+            {takenFull < 0 ? (
+              <>Dolu çıxış, dolu girişdən az ola bilməz</>
+            ) : (
+              <>
+                Götürüləcək dolu: <strong>{takenFull}</strong>
+                <span style={{ display: 'block', marginTop: 4, color: '#6b7280' }}>
+                  {exitFull} − {entryFull} = {takenFull}
+                  {entryEmpty > 0 ? ` · boş girdi: ${entryEmpty}` : ''}
+                </span>
+              </>
+            )}
           </p>
         )}
 
         {error && <p className="courier-error-box">{error}</p>}
         {success && <p className="warehouse-success-box">{success}</p>}
-        {mismatchWarning && <p className="warehouse-warn-box">{mismatchWarning}</p>}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || takenFull < 0}
           className="courier-btn courier-btn--primary"
-          style={{ marginTop: '16px', opacity: submitting ? 0.6 : 1 }}
+          style={{ marginTop: '16px', opacity: submitting || takenFull < 0 ? 0.6 : 1 }}
         >
-          {submitting ? 'Göndərilir...' : 'Anbarı yenilə'}
+          {submitting ? 'Göndərilir...' : 'Qeyd et'}
         </button>
       </form>
 
@@ -302,26 +393,35 @@ export default function WarehouseSection() {
           <p className="courier-empty">Bu dövrdə qeyd yoxdur</p>
         ) : (
           <ul className="warehouse-history__list">
-            {history.map((item, i) => (
-              <li key={item.id ?? i} className="warehouse-history__item">
-                <div>
-                  <p className="warehouse-history__summary">{formatUpdateSummary(item)}</p>
-                  <p className="warehouse-history__meta">
-                    {item.created_at &&
-                      formatAppDateTime(item.created_at, {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    {item.notes && ` · ${item.notes}`}
-                  </p>
-                </div>
-                <div className="warehouse-history__counts">
-                  <span>{item.remaining_full} dolu</span>
-                </div>
-              </li>
-            ))}
+            {history.map((item, i) => {
+              const taken = takenFullFromUpdate(item);
+              return (
+                <li key={item.id ?? i} className="warehouse-history__item">
+                  <div>
+                    <p className="warehouse-history__summary">
+                      {formatUpdateSummary(item)}
+                    </p>
+                    <p className="warehouse-history__meta">
+                      {item.created_at &&
+                        formatAppDateTime(item.created_at, {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      {item.notes && ` · ${item.notes}`}
+                    </p>
+                  </div>
+                  <div className="warehouse-history__counts">
+                    {taken != null ? (
+                      <span>+{taken} dolu</span>
+                    ) : item.remaining_full != null ? (
+                      <span>{item.remaining_full} dolu</span>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
