@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import OrderDetailModal from '@/components/courier/OrderDetailModal';
 import { CustomerPhone } from '@/components/courier/CustomerPhone';
 import { PrepaidBadge } from '@/components/courier/OrderExtras';
+import { KhamsaCredit, SuManLogo } from '@/components/courier/BrandMarks';
 import DateFilterBar from '@/components/courier/DateFilterBar';
 import ExpensesSection from '@/components/courier/ExpensesSection';
 import WarehouseSection from '@/components/courier/WarehouseSection';
@@ -254,8 +255,9 @@ export default function CourierDashboard() {
 
       <aside className={`courier-sidebar ${menuOpen ? 'is-open' : ''}`}>
         <div className="courier-sidebar__brand">
-          <div className="courier-sidebar__logo">💧</div>
-          <h1 className="courier-sidebar__title">SuMan</h1>
+          <div className="courier-sidebar__logo">
+            <SuManLogo height={56} priority />
+          </div>
           <p className="courier-sidebar__subtitle">Kuryer Panel</p>
         </div>
 
@@ -270,13 +272,16 @@ export default function CourierDashboard() {
 
         <nav className="courier-nav courier-nav--desktop-only">{renderNav('sidebar')}</nav>
 
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="courier-btn courier-btn--danger courier-btn--block courier-sidebar__logout"
-        >
-          🚪 Çıxış
-        </button>
+        <div className="courier-sidebar__footer">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="courier-btn courier-btn--danger courier-btn--block courier-sidebar__logout"
+          >
+            🚪 Çıxış
+          </button>
+          <KhamsaCredit variant="sidebar" />
+        </div>
       </aside>
 
       <main className="courier-main">
@@ -289,17 +294,25 @@ export default function CourierDashboard() {
           >
             ☰
           </button>
-          <h1 className="courier-topbar__title">{PAGE_TITLES[activeTab]}</h1>
-          <button type="button" className="courier-btn" onClick={() => refresh()}>
-            ↻
-          </button>
+          <div className="courier-topbar__brand">
+            <SuManLogo height={32} />
+          </div>
+          <div className="courier-topbar__right">
+            <KhamsaCredit variant="compact" />
+            <button type="button" className="courier-btn" onClick={() => refresh()}>
+              ↻
+            </button>
+          </div>
         </div>
 
         <header className="courier-page-header">
           <h1 className="courier-page-header__title">{PAGE_TITLES[activeTab]}</h1>
-          <button type="button" className="courier-btn" onClick={() => refresh()}>
-            ↻ Yenilə
-          </button>
+          <div className="courier-page-header__actions">
+            <KhamsaCredit variant="compact" />
+            <button type="button" className="courier-btn" onClick={() => refresh()}>
+              ↻ Yenilə
+            </button>
+          </div>
         </header>
 
         {activeTab !== 'notifications' && activeTab !== 'warehouse' && (
@@ -443,6 +456,10 @@ export default function CourierDashboard() {
             initialEditMode={orderEditMode}
           />
         )}
+
+        <div className="courier-main-credit">
+          <KhamsaCredit variant="footer" />
+        </div>
       </main>
 
       <nav className="courier-bottom-nav" aria-label="Əsas naviqasiya">

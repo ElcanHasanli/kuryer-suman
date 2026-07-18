@@ -6,6 +6,13 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'SuMan — Kuryer Paneli',
   description: 'Su çatdırılması kuryer paneli',
+  icons: {
+    icon: [
+      { url: '/icon.png', type: 'image/png', sizes: '192x192' },
+      { url: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
+    ],
+    apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
+  },
 };
 
 export const viewport: Viewport = {

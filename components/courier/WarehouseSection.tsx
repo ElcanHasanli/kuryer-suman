@@ -25,8 +25,8 @@ const EMPTY_FORM = {
 };
 
 const FALLBACK_WAREHOUSES: WarehouseInfo[] = [
-  { code: 'novxani', name: 'Novxanı' },
-  { code: 'azadliq', name: 'Azadlıq' },
+  { code: 'mikrorayon', name: 'Mikrorayon' },
+  { code: 'xirdalan', name: 'Xırdalan' },
 ];
 
 function parseCount(value: string): number | undefined {
