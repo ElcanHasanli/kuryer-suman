@@ -749,6 +749,13 @@
   margin: 2px 0 0;
   color: #1f2937;
   font-weight: 500;
+  word-break: break-word;
+}
+
+.order-card__note {
+  font-weight: 400;
+  color: #4b5563;
+  white-space: pre-wrap;
 }
 
 .order-card__actions {

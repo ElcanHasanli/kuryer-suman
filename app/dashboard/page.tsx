@@ -28,7 +28,7 @@ import {
 } from '@/lib/dates';
 import type { DateRange } from '@/lib/dates';
 import { buildExportFilename, buildHistoryExportBlob } from '@/lib/exportHistory';
-import { orderRevenue, orderTotal, parseAmount, totalCollectedFromOrder } from '@/lib/orderAmounts';
+import { orderRevenue, orderTotal, parseAmount, totalCollectedFromOrder, customerDebtAmount, customerDepositAmount, customerNotesText } from '@/lib/orderAmounts';
 import type { DateFilterPeriod, ExpensesResponse, Notification, Order } from '@/lib/types';
 import { getOrderStatusLabel, getOrderTypeLabel, getPaymentTypeLabel, isPickupOrder, customerDisplayName, customerOrderAddress } from '@/lib/utils';
 
@@ -645,6 +645,22 @@ function OrdersList({
                 <dt>Ünvan</dt>
                 <dd>{customerOrderAddress(order)}</dd>
               </div>
+              {customerDebtAmount(order) > 0 && (
+                <div>
+                  <dt>Borc</dt>
+                  <dd>₼{customerDebtAmount(order).toFixed(2)}</dd>
+                </div>
+              )}
+              <div>
+                <dt>Depozit</dt>
+                <dd>₼{customerDepositAmount(order).toFixed(2)}</dd>
+              </div>
+              {customerNotesText(order) && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <dt>Müştəri qeydi</dt>
+                  <dd className="order-card__note">{customerNotesText(order)}</dd>
+                </div>
+              )}
               {!completed && (
                 <>
                   <div>

@@ -114,6 +114,18 @@ export function customerDebtAmount(order: {
   return parseAmount(order.debt);
 }
 
+export function customerDepositAmount(order: {
+  customer_deposit?: number | string | null;
+}): number {
+  return parseAmount(order.customer_deposit);
+}
+
+export function customerNotesText(order: {
+  customer_notes?: string | null;
+}): string {
+  return (order.customer_notes || '').trim();
+}
+
 /** Tamamlama zamanı köhnə borcdan ödənilən */
 export function debtPaidFromOrder(order: {
   debt_paid?: number | string | null;

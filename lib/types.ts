@@ -60,6 +60,12 @@ export interface Order {
   debt?: number | string | null;
   /** Müştərinin cari ümumi borcu (AZN) — API join */
   customer_debt?: number | string | null;
+  /** Müştəri depoziti (AZN) — yalnız oxumaq */
+  customer_deposit?: number | string | null;
+  /** Müştərinin daimi qeydi (sifariş notes deyil) */
+  customer_notes?: string | null;
+  /** Müştəridə aktiv bidon sayı */
+  active_bidons?: number | string | null;
   /** Sifariş ödənişi inputunun max-ı (= order_due) */
   max_order_payment?: number | string | null;
   /** Borc ödənişi inputunun max-ı (= customer_debt) */

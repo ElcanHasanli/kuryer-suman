@@ -18,6 +18,8 @@ import {
 } from '@/lib/courierEdit';
 import {
   customerDebtAmount,
+  customerDepositAmount,
+  customerNotesText,
   debtPaidFromOrder,
   extrasTotal,
   maxDebtPaymentFromOrder,
@@ -402,6 +404,25 @@ export default function OrderDetailModal({
             <DetailRow label="Müştəri" value={customerDisplayName(order)} />
             <DetailRow label="Ünvan" value={customerOrderAddress(order)} />
             <DetailRow label="Telefon" value={<CustomerPhoneBlock order={order} />} />
+            {customerDebtAmount(order) > 0 && (
+              <DetailRow
+                label="Borc"
+                value={`₼${customerDebtAmount(order).toFixed(2)}`}
+              />
+            )}
+            <DetailRow
+              label="Depozit"
+              value={`₼${customerDepositAmount(order).toFixed(2)}`}
+            />
+            {customerNotesText(order) && (
+              <DetailRow label="Müştəri qeydi" value={customerNotesText(order)} />
+            )}
+            {order.active_bidons != null && order.active_bidons !== '' && (
+              <DetailRow
+                label="Aktiv bidon"
+                value={String(order.active_bidons)}
+              />
+            )}
             <DetailRow
               label="Növ"
               value={getOrderTypeLabel(order.order_type)}
@@ -444,12 +465,6 @@ export default function OrderDetailModal({
                         )}
                       </span>
                     }
-                  />
-                )}
-                {customerDebtAmount(order) > 0 && (
-                  <DetailRow
-                    label="Müştəri borcu"
-                    value={`₼${customerDebtAmount(order).toFixed(2)}`}
                   />
                 )}
               </>
